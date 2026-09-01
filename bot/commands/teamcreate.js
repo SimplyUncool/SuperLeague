@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.command = void 0;
+
 const discord_js_1 = require("discord.js");
 const database_js_1 = require("./database.js");
 const embeds_js_1 = require("./embeds.js");
@@ -8,6 +9,7 @@ const managerrole_js_1 = require("./managerrole.js");
 const teamstaff_js_1 = require("./teamstaff.js");
 const teamembeds_js_1 = require("./teamembeds.js");
 const permissions_js_1 = require("./permissions.js");
+
 exports.command = {
     data: new discord_js_1.SlashCommandBuilder()
         .setName("teamcreate")
@@ -19,7 +21,11 @@ exports.command = {
         .addUserOption(option => option
         .setName("manager")
         .setDescription("The team's first manager.")
-        .setRequired(true)),
+        .setRequired(true))
+        .addStringOption(option => option
+        .setName("emoji")
+        .setDescription("The team's custom Discord emoji.")
+        .setRequired(false)),
     async execute(interaction) {
         if (!interaction.guild) {
             await interaction.reply({
@@ -28,7 +34,9 @@ exports.command = {
             });
             return;
         }
+
         const data = (0, database_js_1.loadData)();
+
         if (!(0, permissions_js_1.canRunLeagueAdmin)(interaction, data)) {
             await interaction.reply({
                 embeds: [
@@ -38,9 +46,12 @@ exports.command = {
             });
             return;
         }
+
         const selectedRole = interaction.options.getRole("role", true);
         const teamRole = interaction.guild.roles.cache.get(selectedRole.id);
         const manager = interaction.options.getUser("manager", true);
+        const emoji = interaction.options.getString("emoji")?.trim() || null;
+
         if (!teamRole || teamRole.id === interaction.guild.id) {
             await interaction.reply({
                 embeds: [
@@ -50,6 +61,7 @@ exports.command = {
             });
             return;
         }
+
         if (data.teams[teamRole.id]) {
             await interaction.reply({
                 embeds: [
@@ -59,6 +71,7 @@ exports.command = {
             });
             return;
         }
+
         if ((0, managerrole_js_1.getConfiguredManagerRole)(data, interaction.guild)?.id === teamRole.id) {
             await interaction.reply({
                 embeds: [
@@ -68,6 +81,7 @@ exports.command = {
             });
             return;
         }
+
         if (data.settings.assistantManagerRoles[interaction.guild.id] === teamRole.id) {
             await interaction.reply({
                 embeds: [
@@ -77,6 +91,7 @@ exports.command = {
             });
             return;
         }
+
         if (manager.bot) {
             await interaction.reply({
                 embeds: [
@@ -86,7 +101,9 @@ exports.command = {
             });
             return;
         }
+
         const existingAccess = (0, teamstaff_js_1.findTeamAccess)(data, manager.id);
+
         if (existingAccess) {
             await interaction.reply({
                 embeds: [
@@ -96,7 +113,9 @@ exports.command = {
             });
             return;
         }
+
         const managerMember = await interaction.guild.members.fetch(manager.id).catch(() => null);
+
         if (!managerMember) {
             await interaction.reply({
                 embeds: [
@@ -106,30 +125,92 @@ exports.command = {
             });
             return;
         }
+
         const currentTeamId = Object.keys(data.teams).find(roleId => managerMember.roles.cache.has(roleId));
+
         if (currentTeamId) {
             const currentTeam = interaction.guild.roles.cache.get(currentTeamId);
+
             await interaction.reply({
                 embeds: [
-                    (0, embeds_js_1.createErrorEmbed)(`${manager} is already a player on ${currentTeam ?? "another registered team"}.`, interaction.guild)
+                    (0, embeds_js_1.createErrorEmbed)(
+                        `${manager} is already a player on ${currentTeam ?? "another registered team"}.`,
+                        interaction.guild
+                    )
                 ],
                 ephemeral: true
             });
             return;
         }
+
+        /*
+         * Add the custom emoji to the team role name.
+         *
+         * Example:
+         * /teamcreate role:@Arsenal manager:@User emoji:<:arsenal:123456789>
+         *
+         * Result:
+         * <:arsenal:123456789> Arsenal
+         */
+
+        if (emoji) {
+            const newRoleName = `${emoji} ${teamRole.name}`;
+
+            if (newRoleName.length > 100) {
+                await interaction.reply({
+                    embeds: [
+                        (0, embeds_js_1.createErrorEmbed)(
+                            "The resulting team role name is longer than Discord's 100 character limit.",
+                            interaction.guild
+                        )
+                    ],
+                    ephemeral: true
+                });
+                return;
+            }
+
+            try {
+                await teamRole.setName(
+                    newRoleName,
+                    `Team emoji added by ${interaction.user.tag}`
+                );
+            }
+            catch (error) {
+                console.error("Failed to add team emoji:", error);
+
+                await interaction.reply({
+                    embeds: [
+                        (0, embeds_js_1.createErrorEmbed)(
+                            "I couldn't rename the team role. Make sure I have Manage Roles permission.",
+                            interaction.guild
+                        )
+                    ],
+                    ephemeral: true
+                });
+                return;
+            }
+        }
+
         try {
-            await (0, managerrole_js_1.assignManagerRoles)(managerMember, teamRole, data, `Team created by ${interaction.user.tag}`);
+            await (0, managerrole_js_1.assignManagerRoles)(
+                managerMember,
+                teamRole,
+                data,
+                `Team created by ${interaction.user.tag}`
+            );
         }
         catch (error) {
             const message = error instanceof Error
                 ? error.message
                 : "I could not assign the required manager roles.";
+
             await interaction.reply({
                 embeds: [(0, embeds_js_1.createErrorEmbed)(message, interaction.guild)],
                 ephemeral: true
             });
             return;
         }
+
         data.teams[teamRole.id] = {
             managerid: manager.id,
             staff: {
@@ -137,14 +218,48 @@ exports.command = {
                 player_manager: null
             }
         };
+
         (0, database_js_1.saveData)(data);
+
         const managerRole = (0, managerrole_js_1.getConfiguredManagerRole)(data, interaction.guild);
-        const embed = (0, embeds_js_1.createSuccessEmbed)(interaction.guild, "Team Created", `${teamRole} is ready and ${manager} has been appointed as manager.`, [
-            { name: "Team Role", value: `${teamRole}`, inline: true },
-            { name: "Manager Role", value: `${managerRole}`, inline: true },
-            { name: "Created By", value: `${interaction.user}`, inline: true }
-        ]).setThumbnail((0, teamembeds_js_1.getTeamThumbnail)(teamRole, interaction.guild));
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-        await (0, teamembeds_js_1.sendTransactionRecord)(interaction.guild, data, embed);
+
+        const embed = (0, embeds_js_1.createSuccessEmbed)(
+            interaction.guild,
+            "Team Created",
+            `${teamRole} is ready and ${manager} has been appointed as manager.`,
+            [
+                {
+                    name: "Team Role",
+                    value: `${teamRole}`,
+                    inline: true
+                },
+                {
+                    name: "Manager Role",
+                    value: `${managerRole}`,
+                    inline: true
+                },
+                {
+                    name: "Created By",
+                    value: `${interaction.user}`,
+                    inline: true
+                }
+            ]
+        ).setThumbnail(
+            (0, teamembeds_js_1.getTeamThumbnail)(
+                teamRole,
+                interaction.guild
+            )
+        );
+
+        await interaction.reply({
+            embeds: [embed],
+            ephemeral: true
+        });
+
+        await (0, teamembeds_js_1.sendTransactionRecord)(
+            interaction.guild,
+            data,
+            embed
+        );
     }
 };
