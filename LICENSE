@@ -1,12 +1,12 @@
 # Super League Bot — Source-Available License
 
-**Copyright © 2026 Mohamed Ali. All rights reserved.**
+**Copyright © 2026 Mohammad Ali. All rights reserved.**
 
 This Source-Available License ("License") governs the use of the source code of **Super League Bot** ("Software").
 
 ## 1. Copyright
 
-The Software, including its source code, documentation, configuration, and associated materials, is protected by applicable copyright and intellectual-property laws.
+The Software, including its original source code, documentation, configuration, and other original materials created by Mohammad Ali, is protected by applicable copyright and intellectual-property laws.
 
 Except for the limited rights expressly granted by this License, all rights are reserved by the copyright holder.
 
@@ -41,55 +41,65 @@ Creating a private local modification solely for personal evaluation is permitte
 
 If you would like to use, modify, redistribute, fork, commercially use, or otherwise use the Software in a manner not permitted by this License, you may request permission from the copyright holder.
 
-Permission requests may be made by contacting **Mohamed Ali** on Discord at:
+Permission requests may be made by contacting **Mohammad Ali** on Discord at:
 
 **`simplyuncool_`**
 
 Permission is granted only when explicitly provided by the copyright holder. Silence or failure to respond does not constitute permission.
 
-## 5. No Trademark Rights
+## 5. Third-Party Branding and Assets
 
-This License does not grant permission to use the names **Super League Bot**, **Super League**, associated logos, branding, or other trademarks except where such use is permitted by applicable law.
+Logos, artwork, names, trademarks, server icons, and other branding or assets associated with Super League Bot that were not created or owned by Mohammad Ali are **not covered by this License**.
 
-## 6. Contributions
+Such third-party materials remain the property of their respective owners.
+
+This License grants no ownership or permission to reproduce, modify, distribute, or commercially use third-party materials.
+
+## 6. No Trademark Rights
+
+This License does not grant permission to use the names **Super League Bot**, **Super League**, associated logos, branding, or other trademarks except where such use is permitted by their respective owners or applicable law.
+
+## 7. Contributions
 
 Unless otherwise agreed in writing, any contribution submitted to the Software is provided under the same licensing terms as the portion of the Software to which it contributes.
 
 By submitting a contribution, you represent that you have the necessary rights to submit it.
 
-## 7. Third-Party Components
+## 8. Third-Party Components
 
-This License applies only to code and materials authored by the copyright holder.
+This License applies only to code and materials authored by Mohammad Ali.
 
 Third-party libraries, dependencies, assets, or other components included with or used by the Software remain subject to their respective licenses.
 
 Nothing in this License overrides or restricts rights granted by a third-party license.
 
-## 8. No Warranty
+## 9. No Warranty
 
 THE SOFTWARE IS PROVIDED **"AS IS"**, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, OR NON-INFRINGEMENT.
 
-THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-## 9. Termination
+## 10. Termination
 
 Any rights granted under this License automatically terminate if you violate its terms.
 
 Upon termination, you must cease all use of the Software and, where legally required, destroy copies in your possession or control.
 
-Sections concerning copyright, restrictions, trademarks, disclaimer of warranty, and limitation of liability survive termination.
+Sections concerning copyright, restrictions, third-party materials, trademarks, disclaimer of warranty, and limitation of liability survive termination.
 
-## 10. No Open-Source Grant
+## 11. No Open-Source Grant
 
 This License is a **source-available license** and is **not an OSI-approved open-source license**.
 
-Access to the source code does not, by itself, grant the rights to freely use, modify, or redistribute the Software. The permissions granted by this License are limited to those expressly stated above.
+Access to the source code does not, by itself, grant the rights to freely use, modify, or redistribute the Software.
 
-## 11. Governing Law
+The permissions granted by this License are limited to those expressly stated above.
+
+## 12. Governing Law
 
 This License shall be interpreted under the laws applicable to the copyright holder, except where applicable law requires otherwise.
 
-## 12. Acceptance
+## 13. Acceptance
 
 By downloading, accessing, or using the Software in a manner permitted by this License, you agree to comply with its terms.
 
@@ -98,7 +108,7 @@ If you do not agree to these terms, you are not granted permission to use the So
 ---
 
 **Super League Bot**
-Copyright © 2026 Mohamed Ali
+Copyright © 2026 Mohammad Ali
 All rights reserved.
 
 **Permission requests:** Discord — `simplyuncool_`
