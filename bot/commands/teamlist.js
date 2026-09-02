@@ -1,61 +1,79 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.command = void 0;
-const discord_js_1 = require("discord.js");
-const database_js_1 = require("./database.js");
-const embeds_js_1 = require("./embeds.js");
-const rosterutils_js_1 = require("./rosterutils.js");
-exports.command = {
-    data: new discord_js_1.SlashCommandBuilder()
+
+const { SlashCommandBuilder } = require("discord.js");
+const { loadData, getRosterLimit } = require("./database.js");
+const { createErrorEmbed, createStatusEmbed } = require("./embeds.js");
+const { ensureGuildMembers, getRosterPlayers } = require("./rosterutils.js");
+
+function chunkLines(lines, maxLength = 3800) {
+    const chunks = [];
+    let current = "";
+
+    for (const line of lines) {
+        if (current && current.length + line.length + 1 > maxLength) {
+            chunks.push(current);
+            current = "";
+        }
+        current += (current ? "\n" : "") + line;
+    }
+
+    if (current) chunks.push(current);
+    return chunks;
+}
+
+const command = {
+    data: new SlashCommandBuilder()
         .setName("teamlist")
         .setDescription("View every registered team in this server."),
+
     async execute(interaction) {
         if (!interaction.guild) {
-            await interaction.reply({
-                embeds: [(0, embeds_js_1.createErrorEmbed)("This command can only be used inside a server.")],
-                ephemeral: true
-            });
+            await interaction.reply({ embeds: [createErrorEmbed("This command can only be used inside a server.")], ephemeral: true });
             return;
         }
-        const data = (0, database_js_1.loadData)();
+
+        const data = loadData();
         await interaction.deferReply({ ephemeral: true });
+
         try {
-            await (0, rosterutils_js_1.ensureGuildMembers)(interaction.guild);
-        }
-        catch (error) {
+            await ensureGuildMembers(interaction.guild);
+        } catch (error) {
             console.error(error);
-            await interaction.editReply({
-                embeds: [
-                    (0, embeds_js_1.createErrorEmbed)("I could not load the team list. Make sure Server Members Intent is enabled.", interaction.guild)
-                ]
-            });
+            await interaction.editReply({ embeds: [createErrorEmbed("I could not load the team list. Make sure Server Members Intent is enabled.", interaction.guild)] });
             return;
         }
+
         const teams = Object.entries(data.teams)
-            .map(([roleId, team]) => ({
-            role: interaction.guild?.roles.cache.get(roleId),
-            team
-        }))
+            .map(([roleId, team]) => ({ role: interaction.guild.roles.cache.get(roleId), team }))
             .filter(entry => entry.role);
+
         if (!teams.length) {
             await interaction.editReply({
-                embeds: [
-                    (0, embeds_js_1.createStatusEmbed)({
-                        guild: interaction.guild,
-                        title: "No Registered Teams",
-                        description: "There are no registered teams in this server yet."
-                    })
-                ]
+                embeds: [createStatusEmbed({ guild: interaction.guild, title: "No Registered Teams", description: "There are no registered teams in this server yet." })]
             });
             return;
         }
-        const rosterLimit = (0, database_js_1.getRosterLimit)(data, interaction.guild.id);
-        const lines = teams.map(({ role, team }) => `${role} — ${team.managerid ? `<@${team.managerid}>` : "Vacant"} — ${(0, rosterutils_js_1.getRosterPlayers)(role, team).length}/${rosterLimit} players`);
-        const embed = (0, embeds_js_1.createStatusEmbed)({
-            guild: interaction.guild,
-            title: "Registered Teams",
-            description: lines.join("\n")
-        });
-        await interaction.editReply({ embeds: [embed] });
+
+        const rosterLimit = getRosterLimit(data, interaction.guild.id);
+        const lines = teams.map(({ role, team }) =>
+            `${role} — ${team.managerid ? `<@${team.managerid}>` : "Vacant"} — ${getRosterPlayers(role, team).length}/${rosterLimit} players`
+        );
+        const pages = chunkLines(lines);
+
+        const embeds = pages.slice(0, 10).map((description, index) =>
+            createStatusEmbed({
+                guild: interaction.guild,
+                title: pages.length > 1 ? `Registered Teams (${index + 1}/${pages.length})` : "Registered Teams",
+                description
+            })
+        );
+
+        if (pages.length > 10) {
+            embeds[9].setFooter({ text: `Showing first 10 pages of ${pages.length}.` });
+        }
+
+        await interaction.editReply({ embeds });
     }
 };
+
+module.exports = { command };
