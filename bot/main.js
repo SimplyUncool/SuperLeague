@@ -46,6 +46,10 @@ const transactionchannel =
 const release =
     require("./commands/release.js");
 
+const applications = 
+    __importStar(require("./commands/applications.js"));
+
+
 const teamstaff =
     require("./commands/teamstaff.js");
 
@@ -69,10 +73,6 @@ const limits =
 
 const demand =
     require("./commands/demand.js");
-
-const applications =
-    require("./commands/applications.js");
-
 
 /* =========================================================
    OTHER MODULES

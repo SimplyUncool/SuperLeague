@@ -1,12 +1,31 @@
 {
-    "teams": {},
+    "teams": {
+        "1544457338919063754": {
+            "managerid": "874228203412160533",
+            "staff": {
+                "assistant_manager": null,
+                "player_manager": null
+            }
+        },
+        "1544457288927150180": {
+            "managerid": "1464429979319140445",
+            "staff": {
+                "assistant_manager": null,
+                "player_manager": null
+            }
+        }
+    },
     "settings": {
         "transactionChannel": null,
         "candidateRoles": {},
-        "managerRoles": {},
+        "managerRoles": {
+            "1543771644450046022": "1544263009495420950"
+        },
         "assistantManagerRoles": {},
         "playerManagerRoles": {},
-        "logChannels": {},
+        "logChannels": {
+            "1543771644450046022": "1544014894997835937"
+        },
         "transactionChannels": {},
         "owner_id": "",
         "whitelists": {
@@ -14,9 +33,32 @@
             "league_admin": []
         },
         "demandLimits": {},
-        "rosterLimits": {},
+        "rosterLimits": {
+            "1543771644450046022": 20
+        },
         "demandUsage": {},
-        "applications": {},
+        "applications": {
+            "1543771644450046022": {
+                "reviewChannelId": "1544632332852658206",
+                "adminRoleId": "1543962873590583397",
+                "panelChannelId": "1544632026353893376",
+                "panelMessageId": "1544634813451997185",
+                "types": {
+                    "sl_manager": {
+                        "name": "SL┃Manager",
+                        "roleId": "1544263009495420950",
+                        "emoji": "<:SL:1544448263959355522>",
+                        "questions": [
+                            "What team are you looking to manage?",
+                            "Are you at least decently competitive?",
+                            "Please write out your roster in one message with plain text, and full usernames.",
+                            "Do you have any experience managing teams? If so, please tell us.",
+                            "Please type out the letters \"YES\" in bold italic."
+                        ]
+                    }
+                }
+            }
+        },
         "activeApplications": {}
     }
 }
