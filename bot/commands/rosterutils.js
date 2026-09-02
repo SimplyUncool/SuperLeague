@@ -12,11 +12,8 @@ function getTeamLeadershipIds(team) {
 }
 
 function getRosterPlayers(teamRole, team) {
-    const leadershipIds = getTeamLeadershipIds(team);
-
     return [...teamRole.members.values()].filter(member =>
-        !member.user.bot &&
-        !leadershipIds.has(member.id)
+        !member.user.bot
     );
 }
 
