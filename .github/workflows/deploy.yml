@@ -18,17 +18,18 @@ jobs:
           key: ${{ secrets.ORACLE_SSH_KEY }}
           script: |
             set -e
-            cd ~/discord-bot
+            BOT_DIR="/home/opc/discord-bot"
+            cd "$BOT_DIR"
 
-            DB_DIR="$HOME/discord-bot-data"
+            DB_DIR="/home/opc/discord-bot-data"
             DB_FILE="$DB_DIR/users.json"
             BACKUP_DIR="$DB_DIR/backups"
             mkdir -p "$BACKUP_DIR"
 
             # The live database may still exist in the old Git checkout on the
             # first deployment after this migration. Copy it before pulling.
-            if [ ! -f "$DB_FILE" ] && [ -f "$HOME/discord-bot/users.json" ]; then
-              cp "$HOME/discord-bot/users.json" "$DB_FILE"
+            if [ ! -f "$DB_FILE" ] && [ -f "$BOT_DIR/users.json" ]; then
+              cp "$BOT_DIR/users.json" "$DB_FILE"
             fi
 
             if [ -f "$DB_FILE" ]; then
@@ -40,11 +41,11 @@ jobs:
             git checkout -- users.json 2>/dev/null || true
             git pull --ff-only origin main
 
-            cd ~/discord-bot/bot
+            cd "$BOT_DIR/bot"
             npm install --omit=dev
             find . -type f -name '*.js' -exec node --check {} \;
 
-            cd ~/discord-bot
+            cd "$BOT_DIR"
             test -f "$DB_FILE"
             SUPER_LEAGUE_DB_PATH="$DB_FILE" pm2 restart discord-bot --update-env
             pm2 describe discord-bot >/dev/null
