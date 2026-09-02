@@ -8,6 +8,7 @@ const assistantmanagerrole_js_1 = require("./assistantmanagerrole.js");
 const managerrole_js_1 = require("./managerrole.js");
 const teamembeds_js_1 = require("./teamembeds.js");
 const permissions_js_1 = require("./permissions.js");
+const rosterutils_js_1 = require("./rosterutils.js");
 exports.command = {
     data: new discord_js_1.SlashCommandBuilder()
         .setName("teamdisband")
@@ -48,6 +49,28 @@ exports.command = {
         }
         const previousManagerId = team.managerid;
         const previousAssistantId = team.staff.assistant_manager;
+
+        try {
+            await (0, rosterutils_js_1.ensureGuildMembers)(interaction.guild);
+            const membersWithTeamRole = [...teamRole.members.values()];
+            for (const member of membersWithTeamRole) {
+                await member.roles.remove(
+                    teamRole,
+                    `Team disbanded by ${interaction.user.tag}`
+                );
+            }
+        }
+        catch (error) {
+            console.error(error);
+            await interaction.reply({
+                embeds: [
+                    (0, embeds_js_1.createErrorEmbed)("I couldn't remove the team role from every member, so the team was not disbanded. Fix my Manage Roles permission/role hierarchy and try again.", interaction.guild)
+                ],
+                ephemeral: true
+            });
+            return;
+        }
+
         delete data.teams[teamRole.id];
         (0, database_js_1.saveData)(data);
         const managerRoleRemoved = await (0, managerrole_js_1.removeManagerRoleIfUnused)(interaction.guild, previousManagerId, data, `Team disbanded by ${interaction.user.tag}`);
