@@ -43,7 +43,8 @@ function createEmptyDatabase() {
             demandUsage: {},
             applications: {},
             activeApplications: {},
-            applicationReviews: {}
+            applicationReviews: {},
+            offers: {}
         }
     };
 }
@@ -53,18 +54,12 @@ function clone(value) {
 }
 
 function hash(value) {
-    return crypto
-        .createHash("sha256")
-        .update(value, "utf8")
-        .digest("hex");
+    return crypto.createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 function attachMetadata(data, raw) {
     Object.defineProperty(data, DB_META, {
-        value: {
-            snapshot: clone(data),
-            hash: hash(raw)
-        },
+        value: { snapshot: clone(data), hash: hash(raw) },
         enumerable: false,
         configurable: true,
         writable: true
@@ -95,22 +90,7 @@ function normalizeData(parsed) {
     const normalizeNumberMap = (value, min, max) => Object.fromEntries(
         Object.entries(value ?? {})
             .filter(([, item]) => typeof item === "number" && Number.isFinite(item))
-            .map(([id, item]) => [
-                id,
-                Math.min(max, Math.max(min, Math.floor(item)))
-            ])
-    );
-
-    const demandLimits = normalizeNumberMap(
-        rawSettings.demandLimits ?? rawSettings.demandCaps ?? {},
-        1,
-        100
-    );
-
-    const rosterLimits = normalizeNumberMap(
-        rawSettings.rosterLimits ?? {},
-        1,
-        100
+            .map(([id, item]) => [id, Math.min(max, Math.max(min, Math.floor(item)))])
     );
 
     const demandUsage = Object.fromEntries(
@@ -127,10 +107,7 @@ function normalizeData(parsed) {
     return {
         teams,
         settings: {
-            transactionChannel:
-                typeof rawSettings.transactionChannel === "string"
-                    ? rawSettings.transactionChannel
-                    : null,
+            transactionChannel: typeof rawSettings.transactionChannel === "string" ? rawSettings.transactionChannel : null,
             candidateRoles: rawSettings.candidateRoles ?? {},
             managerRoles: rawSettings.managerRoles ?? {},
             assistantManagerRoles: rawSettings.assistantManagerRoles ?? {},
@@ -151,8 +128,8 @@ function normalizeData(parsed) {
                     ? rawSettings.whitelists.league_admin.filter(id => typeof id === "string")
                     : []
             },
-            demandLimits,
-            rosterLimits,
+            demandLimits: normalizeNumberMap(rawSettings.demandLimits ?? rawSettings.demandCaps ?? {}, 1, 100),
+            rosterLimits: normalizeNumberMap(rawSettings.rosterLimits ?? {}, 1, 100),
             demandUsage,
             applications:
                 rawSettings.applications && typeof rawSettings.applications === "object"
@@ -165,6 +142,10 @@ function normalizeData(parsed) {
             applicationReviews:
                 rawSettings.applicationReviews && typeof rawSettings.applicationReviews === "object"
                     ? rawSettings.applicationReviews
+                    : {},
+            offers:
+                rawSettings.offers && typeof rawSettings.offers === "object"
+                    ? rawSettings.offers
                     : {}
         }
     };
@@ -172,8 +153,7 @@ function normalizeData(parsed) {
 
 function recoverDatabase(raw, source) {
     try {
-        const parsed = JSON.parse(raw);
-        return attachMetadata(normalizeData(parsed), raw);
+        return attachMetadata(normalizeData(JSON.parse(raw)), raw);
     } catch (error) {
         console.error(`Failed to parse ${source}:`, error);
         return null;
@@ -181,15 +161,11 @@ function recoverDatabase(raw, source) {
 }
 
 function loadData() {
-    const dir = path.dirname(filePath);
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
     if (!fs.existsSync(filePath)) {
         if (fs.existsSync(backupPath)) {
-            const recovered = recoverDatabase(
-                fs.readFileSync(backupPath, "utf8"),
-                backupPath
-            );
+            const recovered = recoverDatabase(fs.readFileSync(backupPath, "utf8"), backupPath);
             if (recovered) {
                 saveData(recovered);
                 return recovered;
@@ -202,30 +178,22 @@ function loadData() {
     }
 
     const raw = fs.readFileSync(filePath, "utf8");
-
     if (!raw.trim()) {
         throw new Error(`Database file is empty: ${filePath}`);
     }
 
     const data = recoverDatabase(raw, filePath);
-    if (data) {
-        return data;
-    }
+    if (data) return data;
 
     if (fs.existsSync(backupPath)) {
-        const backup = recoverDatabase(
-            fs.readFileSync(backupPath, "utf8"),
-            backupPath
-        );
+        const backup = recoverDatabase(fs.readFileSync(backupPath, "utf8"), backupPath);
         if (backup) {
             console.warn("Recovered database from the last known-good backup.");
             return backup;
         }
     }
 
-    throw new Error(
-        `Database is corrupted and no valid backup exists: ${filePath}`
-    );
+    throw new Error(`Database is corrupted and no valid backup exists: ${filePath}`);
 }
 
 function deepEqual(a, b) {
@@ -253,21 +221,15 @@ function mergeThreeWay(base, ours, current) {
         ]);
 
         for (const key of keys) {
-            const baseValue = base[key];
-            const ourValue = ours[key];
-            const currentValue = current[key];
-
             if (!(key in ours)) {
-                if (deepEqual(currentValue, baseValue)) {
-                    delete result[key];
-                }
+                if (deepEqual(current[key], base[key])) delete result[key];
                 continue;
             }
 
             result[key] = mergeThreeWay(
-                baseValue,
-                ourValue,
-                currentValue
+                base[key],
+                ours[key],
+                current[key]
             );
         }
 
@@ -312,23 +274,16 @@ function saveData(data) {
         const current = recoverDatabase(currentRaw, filePath);
 
         if (current && hash(currentRaw) !== meta.hash) {
-            dataToWrite = mergeThreeWay(
-                meta.snapshot,
-                data,
-                current
-            );
+            dataToWrite = mergeThreeWay(meta.snapshot, data, current);
         }
     }
 
     const normalized = normalizeData(dataToWrite);
     const raw = JSON.stringify(normalized, null, 4);
     atomicWrite(raw);
-    attachMetadata(normalized, raw);
 
     if (data && typeof data === "object") {
-        Object.keys(data).forEach(key => {
-            delete data[key];
-        });
+        for (const key of Object.keys(data)) delete data[key];
         Object.assign(data, normalized);
         attachMetadata(data, raw);
     }
