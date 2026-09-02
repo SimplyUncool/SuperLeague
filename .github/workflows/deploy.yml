@@ -18,10 +18,10 @@ jobs:
           key: ${{ secrets.ORACLE_SSH_KEY }}
           script: |
             set -e
-            BOT_DIR="/home/opc/discord-bot"
+            BOT_DIR="/home/opc/sl-bot"
             cd "$BOT_DIR"
 
-            DB_DIR="/home/opc/discord-bot-data"
+            DB_DIR="/home/opc/sl-bot-data"
             DB_FILE="$DB_DIR/users.json"
             BACKUP_DIR="$DB_DIR/backups"
             mkdir -p "$BACKUP_DIR"
