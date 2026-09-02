@@ -18,43 +18,35 @@ jobs:
           key: ${{ secrets.ORACLE_SSH_KEY }}
           script: |
             set -e
-
             cd ~/discord-bot
 
             DB_DIR="$HOME/discord-bot-data"
             DB_FILE="$DB_DIR/users.json"
             BACKUP_DIR="$DB_DIR/backups"
-
             mkdir -p "$BACKUP_DIR"
 
-            # Migrate the live database out of the Git working tree exactly once.
-            # This runs before the repository is reset so uncommitted runtime data
-            # cannot be lost by the deployment.
+            # The live database may still exist in the old Git checkout on the
+            # first deployment after this migration. Copy it before pulling.
             if [ ! -f "$DB_FILE" ] && [ -f "$HOME/discord-bot/users.json" ]; then
               cp "$HOME/discord-bot/users.json" "$DB_FILE"
             fi
 
-            # Keep a deployment-time recovery copy of the live database.
             if [ -f "$DB_FILE" ]; then
               cp "$DB_FILE" "$BACKUP_DIR/users-$(date +%Y%m%d-%H%M%S).json"
             fi
 
-            # Keep the server checkout exactly aligned with origin/main.
-            # Runtime state is no longer stored in this working tree.
-            git fetch origin main
-            git reset --hard origin/main
+            # Remove local runtime changes from tracked files so deployment
+            # cannot be blocked by the old tracked users.json.
+            git checkout -- users.json 2>/dev/null || true
+            git pull --ff-only origin main
 
             cd ~/discord-bot/bot
-            npm ci
-
-            # Syntax-check every JavaScript file before touching the live process.
-            find . -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
-              node --check "$file"
-            done
+            npm install --omit=dev
+            find . -type f -name '*.js' -exec node --check {} \;
 
             cd ~/discord-bot
+            test -f "$DB_FILE"
             SUPER_LEAGUE_DB_PATH="$DB_FILE" pm2 restart discord-bot --update-env
             pm2 describe discord-bot >/dev/null
 
-            # Keep only the newest 20 deployment backups.
             ls -1t "$BACKUP_DIR"/users-*.json 2>/dev/null | tail -n +21 | xargs -r rm -f
