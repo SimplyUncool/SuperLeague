@@ -46,9 +46,8 @@ const transactionchannel =
 const release =
     require("./commands/release.js");
 
-const applications = 
-    __importStar(require("./commands/applications.js"));
-
+const applications =
+    require("./commands/applications.js");
 
 const teamstaff =
     require("./commands/teamstaff.js");
@@ -114,9 +113,6 @@ const client =
         intents: [
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildMembers,
-
-
-
             GatewayIntentBits.DirectMessages,
             GatewayIntentBits.MessageContent
         ],
@@ -136,53 +132,29 @@ const commands =
 
 const commandList = [
     offer.command,
-
     release.command,
-
     teamswap.command,
-
     roster.command,
-
     teamcreate.command,
-
     teamdisband.command,
-
     teamlist.command,
-
     overroster.command,
-
     managerswap.command,
-
     logchannel.command,
-
     transactionchannel.command,
-
     managerrole.command,
-
     assistantmanagerrole.command,
-
     playermanagerrole.command,
-
     teamstaff.setCandidateRoleCommand,
-
     teamstaff.fofillCommand,
-
     teamstaff.promoteCommand,
-
     teamstaff.demoteCommand,
-
     access.whitelistCommand,
-
     access.echoCommand,
-
     limits.rosterLimitCommand,
-
     demand.command,
-
     demand.demandLimitCommand,
-
     demand.demandResetCommand,
-
     applications.command
 ];
 
@@ -254,11 +226,6 @@ async function safeInteractionError(
 client.on(
     "interactionCreate",
     async interaction => {
-
-        /* ================================================
-           AUTOCOMPLETE
-           ================================================ */
-
         if (
             interaction.isAutocomplete()
         ) {
@@ -293,11 +260,6 @@ client.on(
 
             return;
         }
-
-
-        /* ================================================
-           SLASH COMMAND
-           ================================================ */
 
         if (
             interaction.isChatInputCommand()
@@ -347,16 +309,10 @@ client.on(
             return;
         }
 
-
-        /* ================================================
-           SELECT MENUS
-           ================================================ */
-
         if (
             interaction.isStringSelectMenu()
         ) {
             try {
-
                 if (
                     interaction.customId ===
                     "application_select"
@@ -368,7 +324,6 @@ client.on(
 
                     return;
                 }
-
             } catch (error) {
                 if (
                     !isUnknownInteraction(
@@ -387,16 +342,10 @@ client.on(
             return;
         }
 
-
-        /* ================================================
-           BUTTONS
-           ================================================ */
-
         if (
             interaction.isButton()
         ) {
             try {
-
                 if (
                     interaction.customId
                         .startsWith(
@@ -414,8 +363,6 @@ client.on(
 
                     return;
                 }
-
-
 
                 if (
                     interaction.customId
@@ -444,7 +391,6 @@ client.on(
 
                     return;
                 }
-
             } catch (error) {
                 if (
                     !isUnknownInteraction(
@@ -463,16 +409,10 @@ client.on(
             return;
         }
 
-
-        /* ================================================
-           MODALS
-           ================================================ */
-
         if (
             interaction.isModalSubmit()
         ) {
             try {
-
                 if (
                     interaction.customId
                         .startsWith(
@@ -486,7 +426,6 @@ client.on(
 
                     return;
                 }
-
             } catch (error) {
                 if (
                     !isUnknownInteraction(
@@ -622,8 +561,6 @@ client.once(
                 readyClient
             );
 
-
-
         const rest =
             new REST({
                 version: "10"
@@ -643,7 +580,6 @@ client.once(
                         .cache
                         .keys()
                 ];
-
 
             for (
                 let i = 0;
@@ -674,7 +610,6 @@ client.once(
                 }
             }
 
-
             await rest.put(
                 Routes.applicationCommands(
                     readyClient.user.id
@@ -691,7 +626,6 @@ client.once(
             console.log(
                 "Commands refreshed and loaded!"
             );
-
         } catch (error) {
             console.error(
                 "Failed to refresh commands:",
