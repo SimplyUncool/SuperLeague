@@ -27,7 +27,7 @@ jobs:
             mkdir -p "$BACKUP_DIR"
 
             # The live database may still exist in the old Git checkout on the
-            # first deployment after this migration. Copy it before pulling.
+            # first deployment after this migration. Copy it before resetting.
             if [ ! -f "$DB_FILE" ] && [ -f "$BOT_DIR/bot/users.json" ]; then
               cp "$BOT_DIR/bot/users.json" "$DB_FILE"
             fi
@@ -36,10 +36,10 @@ jobs:
               cp "$DB_FILE" "$BACKUP_DIR/users-$(date +%Y%m%d-%H%M%S).json"
             fi
 
-            # Remove local runtime changes from the old tracked database so
-            # the deployment pull cannot be blocked by bot/users.json.
-            git checkout -- bot/users.json 2>/dev/null || true
-            git pull --ff-only origin main
+            # The database is external to Git. Reset the code checkout to the
+            # exact remote main state so forced branch updates cannot block deployment.
+            git fetch origin main
+            git reset --hard origin/main
 
             cd "$BOT_DIR/bot"
             npm install --omit=dev
