@@ -2,8 +2,15 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
-const filePath = path.resolve(__dirname, "..", "users.json");
+const filePath = path.resolve(
+    process.env.SUPER_LEAGUE_DB_PATH ||
+    path.resolve(__dirname, "..", "users.json")
+);
+
+const backupPath = `${filePath}.bak`;
+const DB_META = Symbol("databaseMetadata");
 
 const STAFF_POSITIONS = [
     "assistant_manager",
@@ -27,47 +34,42 @@ function createEmptyDatabase() {
             logChannels: {},
             transactionChannels: {},
             owner_id: "",
-
             whitelists: {
                 echo: [],
                 league_admin: []
             },
-
             demandLimits: {},
             rosterLimits: {},
             demandUsage: {},
-
             applications: {},
-            activeApplications: {}
+            activeApplications: {},
+            applicationReviews: {}
         }
     };
 }
 
-function loadData() {
-    if (!fs.existsSync(filePath)) {
-        const data = createEmptyDatabase();
-        saveData(data);
-        return data;
-    }
+function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+}
 
-    const file = fs.readFileSync(filePath, "utf8");
+function hash(value) {
+    return crypto
+        .createHash("sha256")
+        .update(value, "utf8")
+        .digest("hex");
+}
 
-    if (!file.trim()) {
-        const data = createEmptyDatabase();
-        saveData(data);
-        return data;
-    }
-
-    try {
-        return normalizeData(JSON.parse(file));
-    } catch (error) {
-        console.error("Failed to parse users.json:", error);
-
-        const data = createEmptyDatabase();
-        saveData(data);
-
-        return data;
-    }
+function attachMetadata(data, raw) {
+    Object.defineProperty(data, DB_META, {
+        value: {
+            snapshot: clone(data),
+            hash: hash(raw)
+        },
+        enumerable: false,
+        configurable: true,
+        writable: true
+    });
+    return data;
 }
 
 function normalizeData(parsed) {
@@ -75,171 +77,261 @@ function normalizeData(parsed) {
 
     for (const [roleId, team] of Object.entries(parsed.teams ?? {})) {
         const rawStaff = team.staff ?? {};
-
-        const staff = {
-            ...EMPTY_TEAM_STAFF
-        };
+        const staff = { ...EMPTY_TEAM_STAFF };
 
         for (const position of STAFF_POSITIONS) {
             const value = rawStaff[position];
-
-            staff[position] =
-                typeof value === "string"
-                    ? value
-                    : null;
+            staff[position] = typeof value === "string" ? value : null;
         }
 
         teams[roleId] = {
-            managerid:
-                typeof team.managerid === "string"
-                    ? team.managerid
-                    : "",
-
+            managerid: typeof team.managerid === "string" ? team.managerid : "",
             staff
         };
     }
 
     const rawSettings = parsed.settings ?? {};
 
-    const demandLimits = Object.fromEntries(
-        Object.entries(
-            rawSettings.demandLimits ??
-            rawSettings.demandCaps ??
-            {}
-        )
-            .filter(
-                ([, value]) =>
-                    typeof value === "number" &&
-                    Number.isFinite(value)
-            )
-            .map(([guildId, limit]) => [
-                guildId,
-                Math.min(
-                    100,
-                    Math.max(1, Math.floor(limit))
-                )
+    const normalizeNumberMap = (value, min, max) => Object.fromEntries(
+        Object.entries(value ?? {})
+            .filter(([, item]) => typeof item === "number" && Number.isFinite(item))
+            .map(([id, item]) => [
+                id,
+                Math.min(max, Math.max(min, Math.floor(item)))
             ])
     );
 
-    const rosterLimits = Object.fromEntries(
-        Object.entries(
-            rawSettings.rosterLimits ?? {}
-        )
-            .filter(
-                ([, value]) =>
-                    typeof value === "number" &&
-                    Number.isFinite(value)
-            )
-            .map(([guildId, limit]) => [
-                guildId,
-                Math.min(
-                    100,
-                    Math.max(1, Math.floor(limit))
-                )
-            ])
+    const demandLimits = normalizeNumberMap(
+        rawSettings.demandLimits ?? rawSettings.demandCaps ?? {},
+        1,
+        100
+    );
+
+    const rosterLimits = normalizeNumberMap(
+        rawSettings.rosterLimits ?? {},
+        1,
+        100
     );
 
     const demandUsage = Object.fromEntries(
-        Object.entries(
-            rawSettings.demandUsage ?? {}
-        ).map(([guildId, usage]) => [
+        Object.entries(rawSettings.demandUsage ?? {}).map(([guildId, usage]) => [
             guildId,
-
             Object.fromEntries(
                 Object.entries(usage ?? {})
-                    .filter(
-                        ([, value]) =>
-                            typeof value === "number" &&
-                            Number.isFinite(value)
-                    )
-                    .map(([userId, count]) => [
-                        userId,
-                        Math.max(
-                            0,
-                            Math.floor(count)
-                        )
-                    ])
+                    .filter(([, value]) => typeof value === "number" && Number.isFinite(value))
+                    .map(([userId, count]) => [userId, Math.max(0, Math.floor(count))])
             )
         ])
     );
 
     return {
         teams,
-
         settings: {
             transactionChannel:
                 typeof rawSettings.transactionChannel === "string"
                     ? rawSettings.transactionChannel
                     : null,
-
-            candidateRoles:
-                rawSettings.candidateRoles ?? {},
-
-            managerRoles:
-                rawSettings.managerRoles ?? {},
-
-            assistantManagerRoles:
-                rawSettings.assistantManagerRoles ?? {},
-
-            playerManagerRoles:
-                rawSettings.playerManagerRoles ?? {},
-
-            logChannels:
-                rawSettings.logChannels ?? {},
-
-            transactionChannels:
-                rawSettings.transactionChannels ?? {},
-
+            candidateRoles: rawSettings.candidateRoles ?? {},
+            managerRoles: rawSettings.managerRoles ?? {},
+            assistantManagerRoles: rawSettings.assistantManagerRoles ?? {},
+            playerManagerRoles: rawSettings.playerManagerRoles ?? {},
+            logChannels: rawSettings.logChannels ?? {},
+            transactionChannels: rawSettings.transactionChannels ?? {},
             owner_id:
                 typeof rawSettings.owner_id === "string"
                     ? rawSettings.owner_id
                     : typeof rawSettings.ownerId === "string"
                         ? rawSettings.ownerId
                         : "",
-
             whitelists: {
-                echo:
-                    Array.isArray(
-                        rawSettings.whitelists?.echo
-                    )
-                        ? rawSettings.whitelists.echo.filter(
-                            id => typeof id === "string"
-                        )
-                        : [],
-
-                league_admin:
-                    Array.isArray(
-                        rawSettings.whitelists?.league_admin
-                    )
-                        ? rawSettings.whitelists.league_admin.filter(
-                            id => typeof id === "string"
-                        )
-                        : []
+                echo: Array.isArray(rawSettings.whitelists?.echo)
+                    ? rawSettings.whitelists.echo.filter(id => typeof id === "string")
+                    : [],
+                league_admin: Array.isArray(rawSettings.whitelists?.league_admin)
+                    ? rawSettings.whitelists.league_admin.filter(id => typeof id === "string")
+                    : []
             },
-
             demandLimits,
-
             rosterLimits,
-
             demandUsage,
-
-            /*
-             * APPLICATION SYSTEM
-             */
-
             applications:
-                rawSettings.applications &&
-                typeof rawSettings.applications === "object"
+                rawSettings.applications && typeof rawSettings.applications === "object"
                     ? rawSettings.applications
                     : {},
-
             activeApplications:
-                rawSettings.activeApplications &&
-                typeof rawSettings.activeApplications === "object"
+                rawSettings.activeApplications && typeof rawSettings.activeApplications === "object"
                     ? rawSettings.activeApplications
+                    : {},
+            applicationReviews:
+                rawSettings.applicationReviews && typeof rawSettings.applicationReviews === "object"
+                    ? rawSettings.applicationReviews
                     : {}
         }
     };
+}
+
+function recoverDatabase(raw, source) {
+    try {
+        const parsed = JSON.parse(raw);
+        return attachMetadata(normalizeData(parsed), raw);
+    } catch (error) {
+        console.error(`Failed to parse ${source}:`, error);
+        return null;
+    }
+}
+
+function loadData() {
+    const dir = path.dirname(filePath);
+    fs.mkdirSync(dir, { recursive: true });
+
+    if (!fs.existsSync(filePath)) {
+        if (fs.existsSync(backupPath)) {
+            const recovered = recoverDatabase(
+                fs.readFileSync(backupPath, "utf8"),
+                backupPath
+            );
+            if (recovered) {
+                saveData(recovered);
+                return recovered;
+            }
+        }
+
+        const data = createEmptyDatabase();
+        saveData(data);
+        return data;
+    }
+
+    const raw = fs.readFileSync(filePath, "utf8");
+
+    if (!raw.trim()) {
+        throw new Error(`Database file is empty: ${filePath}`);
+    }
+
+    const data = recoverDatabase(raw, filePath);
+    if (data) {
+        return data;
+    }
+
+    if (fs.existsSync(backupPath)) {
+        const backup = recoverDatabase(
+            fs.readFileSync(backupPath, "utf8"),
+            backupPath
+        );
+        if (backup) {
+            console.warn("Recovered database from the last known-good backup.");
+            return backup;
+        }
+    }
+
+    throw new Error(
+        `Database is corrupted and no valid backup exists: ${filePath}`
+    );
+}
+
+function deepEqual(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function mergeThreeWay(base, ours, current) {
+    if (deepEqual(ours, base)) return current;
+    if (deepEqual(current, base)) return ours;
+
+    if (
+        ours && current && base &&
+        typeof ours === "object" &&
+        typeof current === "object" &&
+        typeof base === "object" &&
+        !Array.isArray(ours) &&
+        !Array.isArray(current) &&
+        !Array.isArray(base)
+    ) {
+        const result = { ...current };
+        const keys = new Set([
+            ...Object.keys(base),
+            ...Object.keys(ours),
+            ...Object.keys(current)
+        ]);
+
+        for (const key of keys) {
+            const baseValue = base[key];
+            const ourValue = ours[key];
+            const currentValue = current[key];
+
+            if (!(key in ours)) {
+                if (deepEqual(currentValue, baseValue)) {
+                    delete result[key];
+                }
+                continue;
+            }
+
+            result[key] = mergeThreeWay(
+                baseValue,
+                ourValue,
+                currentValue
+            );
+        }
+
+        return result;
+    }
+
+    return ours;
+}
+
+function atomicWrite(raw) {
+    const dir = path.dirname(filePath);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    const fd = fs.openSync(tempPath, "w", 0o600);
+
+    try {
+        fs.writeFileSync(fd, raw, "utf8");
+        fs.fsyncSync(fd);
+    } finally {
+        fs.closeSync(fd);
+    }
+
+    if (fs.existsSync(filePath)) {
+        fs.copyFileSync(filePath, backupPath);
+    }
+
+    try {
+        fs.renameSync(tempPath, filePath);
+    } catch (error) {
+        try { fs.unlinkSync(tempPath); } catch {}
+        throw error;
+    }
+}
+
+function saveData(data) {
+    const meta = data?.[DB_META];
+    let dataToWrite = data;
+
+    if (meta && fs.existsSync(filePath)) {
+        const currentRaw = fs.readFileSync(filePath, "utf8");
+        const current = recoverDatabase(currentRaw, filePath);
+
+        if (current && hash(currentRaw) !== meta.hash) {
+            dataToWrite = mergeThreeWay(
+                meta.snapshot,
+                data,
+                current
+            );
+        }
+    }
+
+    const normalized = normalizeData(dataToWrite);
+    const raw = JSON.stringify(normalized, null, 4);
+    atomicWrite(raw);
+    attachMetadata(normalized, raw);
+
+    if (data && typeof data === "object") {
+        Object.keys(data).forEach(key => {
+            delete data[key];
+        });
+        Object.assign(data, normalized);
+        attachMetadata(data, raw);
+    }
 }
 
 function getLogChannelId(data, guildId) {
@@ -247,10 +339,7 @@ function getLogChannelId(data, guildId) {
 }
 
 function getTransactionChannelId(data, guildId) {
-    return (
-        data.settings.transactionChannels[guildId] ??
-        data.settings.transactionChannel
-    );
+    return data.settings.transactionChannels[guildId] ?? data.settings.transactionChannel;
 }
 
 function getDemandLimit(data, guildId) {
@@ -259,22 +348,6 @@ function getDemandLimit(data, guildId) {
 
 function getRosterLimit(data, guildId) {
     return data.settings.rosterLimits[guildId] ?? 20;
-}
-
-function saveData(data) {
-    const dir = path.dirname(filePath);
-
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, {
-            recursive: true
-        });
-    }
-
-    fs.writeFileSync(
-        filePath,
-        JSON.stringify(data, null, 4),
-        "utf8"
-    );
 }
 
 module.exports = {
