@@ -17,6 +17,7 @@ const release = require("./commands/release.js");
 const applications = require("./commands/applications.js");
 const tickets = require("./commands/tickets.js");
 const moderation = require("./commands/moderation.js");
+const threadlock = require("./commands/threadlock.js");
 const teamstaff = require("./commands/teamstaff.js");
 const teamswap = require("./commands/teamswap.js");
 const managerrole = require("./commands/managerrole.js");
@@ -65,7 +66,8 @@ const commandList = [
     demand.demandResetCommand,
     applications.command,
     tickets.command,
-    moderation.command
+    moderation.command,
+    threadlock.command
 ];
 
 for (const command of commandList) commands.set(command.data.name, command);
