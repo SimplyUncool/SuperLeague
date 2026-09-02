@@ -1,2 +1,5 @@
 node_modules/
 .env
+users.json
+users.json.bak
+*.tmp-*
