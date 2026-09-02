@@ -28,17 +28,17 @@ jobs:
 
             # The live database may still exist in the old Git checkout on the
             # first deployment after this migration. Copy it before pulling.
-            if [ ! -f "$DB_FILE" ] && [ -f "$BOT_DIR/users.json" ]; then
-              cp "$BOT_DIR/users.json" "$DB_FILE"
+            if [ ! -f "$DB_FILE" ] && [ -f "$BOT_DIR/bot/users.json" ]; then
+              cp "$BOT_DIR/bot/users.json" "$DB_FILE"
             fi
 
             if [ -f "$DB_FILE" ]; then
               cp "$DB_FILE" "$BACKUP_DIR/users-$(date +%Y%m%d-%H%M%S).json"
             fi
 
-            # Remove local runtime changes from tracked files so deployment
-            # cannot be blocked by the old tracked users.json.
-            git checkout -- users.json 2>/dev/null || true
+            # Remove local runtime changes from the old tracked database so
+            # the deployment pull cannot be blocked by bot/users.json.
+            git checkout -- bot/users.json 2>/dev/null || true
             git pull --ff-only origin main
 
             cd "$BOT_DIR/bot"
