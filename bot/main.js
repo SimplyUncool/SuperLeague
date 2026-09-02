@@ -115,20 +115,11 @@ const client =
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildMembers,
 
-            /*
-             * Required for reading application answers
-             * sent through DMs.
-             */
+
 
             GatewayIntentBits.DirectMessages,
             GatewayIntentBits.MessageContent
         ],
-
-        /*
-         * DMs do not have a guild/channel object in the
-         * same way guild messages do, so this partial is
-         * required for DM channel handling.
-         */
 
         partials: [
             Partials.Channel
@@ -191,10 +182,6 @@ const commandList = [
     demand.demandLimitCommand,
 
     demand.demandResetCommand,
-
-    /*
-     * APPLICATIONS
-     */
 
     applications.command
 ];
@@ -410,10 +397,6 @@ client.on(
         ) {
             try {
 
-                /*
-                 * APPLICATION ACCEPT / REJECT
-                 */
-
                 if (
                     interaction.customId
                         .startsWith(
@@ -433,9 +416,6 @@ client.on(
                 }
 
 
-                /*
-                 * EXISTING OFFER BUTTONS
-                 */
 
                 if (
                     interaction.customId
@@ -643,9 +623,6 @@ client.once(
             );
 
 
-        /*
-         * REGISTER SLASH COMMANDS
-         */
 
         const rest =
             new REST({
@@ -667,9 +644,6 @@ client.once(
                         .keys()
                 ];
 
-            /*
-             * Remove old guild commands.
-             */
 
             for (
                 let i = 0;
@@ -700,10 +674,6 @@ client.once(
                 }
             }
 
-
-            /*
-             * Register global commands.
-             */
 
             await rest.put(
                 Routes.applicationCommands(
