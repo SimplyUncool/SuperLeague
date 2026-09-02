@@ -1,0 +1,23 @@
+{
+    "teams": {},
+    "settings": {
+        "transactionChannel": null,
+        "candidateRoles": {},
+        "managerRoles": {},
+        "assistantManagerRoles": {},
+        "playerManagerRoles": {},
+        "logChannels": {},
+        "transactionChannels": {},
+        "owner_id": "",
+        "whitelists": {
+            "echo": [],
+            "league_admin": []
+        },
+        "demandLimits": {},
+        "rosterLimits": {},
+        "demandUsage": {},
+        "applications": {},
+        "activeApplications": {},
+        "applicationReviews": {}
+    }
+}
