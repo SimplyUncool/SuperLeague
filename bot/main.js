@@ -49,6 +49,9 @@ const release =
 const applications =
     require("./commands/applications.js");
 
+const tickets =
+    require("./commands/tickets.js");
+
 const teamstaff =
     require("./commands/teamstaff.js");
 
@@ -155,7 +158,8 @@ const commandList = [
     demand.command,
     demand.demandLimitCommand,
     demand.demandResetCommand,
-    applications.command
+    applications.command,
+    tickets.command
 ];
 
 for (const command of commandList) {
@@ -346,6 +350,14 @@ client.on(
             interaction.isButton()
         ) {
             try {
+                if (
+                    interaction.customId === "ticket_create" ||
+                    interaction.customId === "ticket_close"
+                ) {
+                    await tickets.handleButton(interaction);
+                    return;
+                }
+
                 if (
                     interaction.customId
                         .startsWith(

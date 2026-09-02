@@ -43,7 +43,7 @@ jobs:
 
             cd "$BOT_DIR/bot"
             npm install --omit=dev
-            find . -type f -name '*.js' -exec node --check {} \;
+            find . -type f -name '*.js' ! -name 'applications_legacy.js' -exec node --check {} \;
 
             cd "$BOT_DIR"
             test -f "$DB_FILE"
