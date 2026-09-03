@@ -20,8 +20,6 @@ const {
 
 const { loadData, saveData, getRosterLimit, getDemandLimit } = require("./database.js");
 const { createErrorEmbed, createSuccessEmbed } = require("./embeds.js");
-const applications = require("./applications.js");
-const tickets = require("./tickets.js");
 
 const dbPath = path.resolve(
     process.env.SUPER_LEAGUE_DB_PATH || path.resolve(__dirname, "..", "users.json")
@@ -32,20 +30,14 @@ function ownerOnly(interaction) {
     return Boolean(interaction.guild && interaction.guild.ownerId === interaction.user.id);
 }
 
-function ensureApplicationConfig(data, guildId) {
-    if (!data.settings.applications) data.settings.applications = {};
-    if (!data.settings.applications[guildId]) {
-        data.settings.applications[guildId] = {
-            reviewChannelId: null,
-            adminRoleId: null,
-            panelChannelId: null,
-            panelMessageId: null,
-            types: {}
-        };
-    }
-    const config = data.settings.applications[guildId];
-    config.types ??= {};
-    return config;
+function ensureTicketConfig(config, guildId) {
+    config.guilds ??= {};
+    config.guilds[guildId] ??= {
+        categoryId: null,
+        panelChannelId: null,
+        panelMessageId: null
+    };
+    return config.guilds[guildId];
 }
 
 function loadTicketConfig() {
@@ -68,63 +60,96 @@ function saveTicketConfig(config) {
     fs.renameSync(tempPath, ticketConfigPath);
 }
 
-function getTicketGuildConfig() {
-    const config = loadTicketConfig();
-    return config.guilds;
-}
-
 function status(value) {
     return value || "Not configured";
 }
 
-function buildMainEmbed(guild, data) {
-    const app = ensureApplicationConfig(data, guild.id);
-    const ticketGuilds = getTicketGuildConfig();
-    const ticket = ticketGuilds[guild.id] ?? {};
+function mainEmbed(guild, data) {
+    const tickets = ensureTicketConfig(loadTicketConfig(), guild.id);
+    const roster = getRosterLimit(data, guild.id);
+    const demand = getDemandLimit(data, guild.id);
 
     return new EmbedBuilder()
         .setColor(0x5865f2)
         .setAuthor({ name: guild.name, iconURL: guild.iconURL({ size: 128 }) ?? undefined })
         .setTitle("Super League Configuration")
-        .setDescription("Use the buttons below to configure the league. **Only the server owner can make changes.**")
+        .setDescription("Configure the league from the menus below.\n\n**Server owner only.** Changes are saved immediately.")
         .addFields(
-            { name: "Channels", value: `Staff Logs: ${status(data.settings.logChannels[guild.id] && `<#${data.settings.logChannels[guild.id]}>`)}\nTransactions: ${status(data.settings.transactionChannels[guild.id] && `<#${data.settings.transactionChannels[guild.id]}>`)}`, inline: true },
-            { name: "Team Roles", value: `Manager: ${status(data.settings.managerRoles[guild.id] && `<@&${data.settings.managerRoles[guild.id]}>`)}\nAssistant: ${status(data.settings.assistantManagerRoles[guild.id] && `<@&${data.settings.assistantManagerRoles[guild.id]}>`)}\nPlayer Manager: ${status(data.settings.playerManagerRoles[guild.id] && `<@&${data.settings.playerManagerRoles[guild.id]}>`)}`, inline: true },
-            { name: "Team Staff", value: `Candidate Pool: ${status(data.settings.candidateRoles[guild.id] && `<@&${data.settings.candidateRoles[guild.id]}>`)}`, inline: true },
-            { name: "Limits", value: `Roster: **${getRosterLimit(data, guild.id)}**\nDemands: **${getDemandLimit(data, guild.id)}** per member`, inline: true },
-            { name: "Applications", value: `Review: ${status(app.reviewChannelId && `<#${app.reviewChannelId}>`)}\nAdmin Role: ${status(app.adminRoleId && `<@&${app.adminRoleId}>`)}\nPanel: ${status(app.panelChannelId && `<#${app.panelChannelId}>`)}\nTypes: **${Object.keys(app.types).length}**`, inline: true },
-            { name: "Tickets", value: `Category: ${status(ticket.categoryId && `<#${ticket.categoryId}>`)}\nPanel: ${status(ticket.panelChannelId && `<#${ticket.panelChannelId}>`)}`, inline: true }
+            {
+                name: "Channels",
+                value: [
+                    `Staff Logs: ${status(data.settings.logChannels[guild.id] && `<#${data.settings.logChannels[guild.id]}>`)}`,
+                    `Transactions: ${status(data.settings.transactionChannels[guild.id] && `<#${data.settings.transactionChannels[guild.id]}>`)}`
+                ].join("\n"),
+                inline: true
+            },
+            {
+                name: "Roles",
+                value: [
+                    `Manager: ${status(data.settings.managerRoles[guild.id] && `<@&${data.settings.managerRoles[guild.id]}>`)}`,
+                    `Assistant: ${status(data.settings.assistantManagerRoles[guild.id] && `<@&${data.settings.assistantManagerRoles[guild.id]}>`)}`,
+                    `Player Manager: ${status(data.settings.playerManagerRoles[guild.id] && `<@&${data.settings.playerManagerRoles[guild.id]}>`)}`,
+                    `Candidate: ${status(data.settings.candidateRoles[guild.id] && `<@&${data.settings.candidateRoles[guild.id]}>`)}`
+                ].join("\n"),
+                inline: true
+            },
+            {
+                name: "Limits",
+                value: `Roster: **${roster}**\nDemands: **${demand}** per member`,
+                inline: true
+            },
+            {
+                name: "Tickets",
+                value: `Category: ${status(tickets.categoryId && `<#${tickets.categoryId}>`)}\nPanel: ${status(tickets.panelChannelId && `<#${tickets.panelChannelId}>`)}`,
+                inline: true
+            },
+            {
+                name: "Access",
+                value: "Echo and League Administration access lists",
+                inline: true
+            }
         )
         .setFooter({ text: "Super League • Server Owner Configuration" });
+}
+
+function button(id, label, style = ButtonStyle.Primary) {
+    return new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
 }
 
 function mainRows() {
     return [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId("cfg_channels").setLabel("Channels").setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId("cfg_roles").setLabel("Roles").setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId("cfg_limits").setLabel("Limits").setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId("cfg_applications").setLabel("Applications").setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId("cfg_tickets").setLabel("Tickets").setStyle(ButtonStyle.Primary)
+            button("cfg_channels", "Channels"),
+            button("cfg_roles", "Roles"),
+            button("cfg_limits", "Limits"),
+            button("cfg_tickets", "Tickets"),
+            button("cfg_access", "Access")
         ),
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId("cfg_access").setLabel("Access Lists").setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId("cfg_refresh").setLabel("Refresh").setStyle(ButtonStyle.Secondary)
-        )
+        new ActionRowBuilder().addComponents(button("cfg_refresh", "Refresh", ButtonStyle.Secondary))
     ];
 }
 
 function backRow() {
+    return new ActionRowBuilder().addComponents(button("cfg_home", "Back", ButtonStyle.Secondary));
+}
+
+function pageEmbed(title, description) {
+    return new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(title)
+        .setDescription(description);
+}
+
+function settingSelect(customId, placeholder, options) {
     return new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("cfg_home").setLabel("Back").setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+            .setCustomId(customId)
+            .setPlaceholder(placeholder)
+            .addOptions(options)
     );
 }
 
-function menuEmbed(title, description) {
-    return new EmbedBuilder().setColor(0x5865f2).setTitle(title).setDescription(description);
-}
-
-function channelRow(customId, placeholder, types = [ChannelType.GuildText]) {
+function channelSelect(customId, placeholder, types = [ChannelType.GuildText]) {
     return new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
             .setCustomId(customId)
@@ -135,188 +160,217 @@ function channelRow(customId, placeholder, types = [ChannelType.GuildText]) {
     );
 }
 
-function roleRow(customId, placeholder) {
+function roleSelect(customId, placeholder) {
     return new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId(customId).setPlaceholder(placeholder).setMinValues(1).setMaxValues(1)
+        new RoleSelectMenuBuilder()
+            .setCustomId(customId)
+            .setPlaceholder(placeholder)
+            .setMinValues(1)
+            .setMaxValues(1)
     );
 }
 
 function buildChannels() {
     return {
-        embeds: [menuEmbed("Configure Channels", "Select a channel below. The selected value is saved immediately.")],
+        embeds: [pageEmbed("Channels", "Choose what you want to configure, then select the channel.\n\nThe selected channel is saved immediately.")],
         components: [
-            channelRow("cfg_set_log", "Select staff log channel"),
-            channelRow("cfg_set_transaction", "Select transaction channel"),
-            channelRow("cfg_set_app_review", "Select application review channel"),
-            channelRow("cfg_set_app_panel", "Select application panel channel"),
+            settingSelect("cfg_channel_setting", "Choose a channel setting", [
+                { label: "Staff Logs", value: "log", description: "Where staff command logs are sent" },
+                { label: "Transactions", value: "transaction", description: "Where completed transactions are sent" }
+            ]),
             backRow()
+        ]
+    };
+}
+
+function buildChannelSetting(setting) {
+    const details = {
+        log: ["Staff Logs", "Select the channel where staff command audit logs should be posted."],
+        transaction: ["Transactions", "Select the channel where completed transactions should be posted."]
+    }[setting];
+
+    if (!details) return buildChannels();
+
+    return {
+        embeds: [pageEmbed(details[0], details[1])],
+        components: [
+            channelSelect(`cfg_channel_set:${setting}`, "Select channel"),
+            new ActionRowBuilder().addComponents(button("cfg_channels", "Choose Another", ButtonStyle.Secondary), button("cfg_home", "Home", ButtonStyle.Secondary))
         ]
     };
 }
 
 function buildRoles() {
     return {
-        embeds: [menuEmbed("Configure Roles", "Select a role below. The selected value is saved immediately. Roles must be below the bot's highest role when the bot needs to assign them.")],
+        embeds: [pageEmbed("Roles", "Choose one staff role to configure.\n\nThe bot validates that the role is usable and is not a registered team role.")],
         components: [
-            roleRow("cfg_set_manager_role", "Select manager role"),
-            roleRow("cfg_set_assistant_role", "Select assistant manager role"),
-            roleRow("cfg_set_player_manager_role", "Select player manager role"),
-            roleRow("cfg_set_candidate_role", "Select manager candidate pool role"),
+            settingSelect("cfg_role_setting", "Choose a role setting", [
+                { label: "Manager Role", value: "manager", description: "Shared manager role" },
+                { label: "Assistant Manager Role", value: "assistant", description: "Shared assistant manager role" },
+                { label: "Player Manager Role", value: "player_manager", description: "Shared player manager role" },
+                { label: "Candidate Pool", value: "candidate", description: "Role used for manager candidates" }
+            ]),
             backRow()
+        ]
+    };
+}
+
+function buildRoleSetting(setting) {
+    const names = {
+        manager: ["Manager Role", "Select the shared manager role."],
+        assistant: ["Assistant Manager Role", "Select the shared assistant manager role."],
+        player_manager: ["Player Manager Role", "Select the shared player manager role."],
+        candidate: ["Manager Candidate Pool", "Select the role used for the manager lottery pool."]
+    };
+    if (!names[setting]) return buildRoles();
+
+    return {
+        embeds: [pageEmbed(names[setting][0], names[setting][1])],
+        components: [
+            roleSelect(`cfg_role_set:${setting}`, "Select role"),
+            new ActionRowBuilder().addComponents(button("cfg_roles", "Choose Another", ButtonStyle.Secondary), button("cfg_home", "Home", ButtonStyle.Secondary))
         ]
     };
 }
 
 function buildLimits() {
     return {
-        embeds: [menuEmbed("Configure Limits", "Change the roster or demand limit, or reset every member's used demands.")],
+        embeds: [pageEmbed("Limits", "Set the maximum roster size, set how many demands a member gets, or reset everyone's used demands.")],
         components: [
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId("cfg_roster_limit").setLabel("Roster Limit").setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId("cfg_demand_limit").setLabel("Demand Limit").setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId("cfg_demand_reset").setLabel("Reset Demands").setStyle(ButtonStyle.Danger)
+                button("cfg_roster_limit", "Roster Limit"),
+                button("cfg_demand_limit", "Demand Limit"),
+                button("cfg_demand_reset", "Reset Demands", ButtonStyle.Danger)
             ),
             backRow()
         ]
     };
 }
 
-function buildApplications(data, guildId) {
-    const app = ensureApplicationConfig(data, guildId);
-    const types = Object.entries(app.types);
-    const description = types.length
-        ? types.map(([id, value]) => `${value.emoji || "📋"} **${value.name}** — \`${id}\` — ${value.questions.length} questions`).join("\n")
-        : "No application types have been created yet.";
-
-    const rows = [
-        channelRow("cfg_set_app_review", "Set application review channel"),
-        roleRow("cfg_set_app_admin", "Set application admin role"),
-        channelRow("cfg_set_app_panel", "Set application panel channel")
-    ];
-
-    if (types.length) {
-        rows.push(new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId("cfg_delete_app")
-                .setPlaceholder("Delete an application type")
-                .addOptions(types.slice(0, 25).map(([id, value]) => ({ label: value.name.slice(0, 100), value: id })))
-        ));
-    }
-
-    rows.push(backRow());
+function buildTickets() {
+    const ticket = ensureTicketConfig(loadTicketConfig(), "__preview__");
     return {
-        embeds: [menuEmbed("Configure Applications", `${description}\n\nCreate applications and manage questions with the existing `/applications create` and `/applications question ...` commands.`)],
-        components: rows
+        embeds: [pageEmbed("Tickets", "Configure the support ticket system.\n\nChoose a setting first, then select its Discord channel.")],
+        components: [
+            settingSelect("cfg_ticket_setting", "Choose a ticket setting", [
+                { label: "Ticket Category", value: "category", description: "Category where new tickets are created" },
+                { label: "Panel Channel", value: "panel", description: "Channel where the ticket panel is posted" }
+            ]),
+            backRow()
+        ]
     };
 }
 
-function buildTickets() {
+function buildTicketSetting(setting) {
+    const details = {
+        category: ["Ticket Category", "Select the category where new support tickets should be created."],
+        panel: ["Ticket Panel Channel", "Select the channel where the public ticket panel should be posted."]
+    }[setting];
+    if (!details) return buildTickets();
+
+    const type = setting === "category" ? [ChannelType.GuildCategory] : [ChannelType.GuildText];
     return {
-        embeds: [menuEmbed("Configure Tickets", "Set the ticket category or deploy a ticket panel. Ticket settings are stored outside the Git checkout.")],
+        embeds: [pageEmbed(details[0], details[1])],
         components: [
-            new ActionRowBuilder().addComponents(
-                new ChannelSelectMenuBuilder().setCustomId("cfg_set_ticket_category").setPlaceholder("Select ticket category").setChannelTypes([ChannelType.GuildCategory]),
-                new ChannelSelectMenuBuilder().setCustomId("cfg_set_ticket_panel").setPlaceholder("Select ticket panel channel").setChannelTypes([ChannelType.GuildText])
-            ),
-            backRow()
+            channelSelect(`cfg_ticket_set:${setting}`, "Select channel", type),
+            new ActionRowBuilder().addComponents(button("cfg_tickets", "Choose Another", ButtonStyle.Secondary), button("cfg_home", "Home", ButtonStyle.Secondary))
         ]
     };
 }
 
 function buildAccess() {
     return {
-        embeds: [menuEmbed("Configure Access Lists", "Select a member, then choose which restricted access list to modify. Changes are saved immediately.")],
+        embeds: [pageEmbed("Access Lists", "Select a member to manage their restricted access.\n\nYou can grant or remove **Echo** and **League Administration** access.")],
         components: [
             new ActionRowBuilder().addComponents(
-                new UserSelectMenuBuilder().setCustomId("cfg_access_user").setPlaceholder("Select a member").setMinValues(1).setMaxValues(1)
+                new UserSelectMenuBuilder()
+                    .setCustomId("cfg_access_user")
+                    .setPlaceholder("Select a member")
+                    .setMinValues(1)
+                    .setMaxValues(1)
             ),
             backRow()
         ]
     };
 }
 
-function buildAccessActions(userId) {
+function buildAccessScope(userId) {
     return {
-        embeds: [menuEmbed("Configure Access", `Selected member: <@${userId}>\nChoose a scope, then add or remove access.`)],
+        embeds: [pageEmbed("Access Lists", `Member: <@${userId}>\n\nChoose which restricted access list to modify.`)],
         components: [
-            new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId(`cfg_access_scope:${userId}`).setPlaceholder("Select access scope").addOptions(
-                    { label: "Echo", value: "echo", description: "Allow /echo" },
-                    { label: "League Administration", value: "league_admin", description: "Allow restricted league admin commands" }
-                )
-            ),
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`cfg_access_add:${userId}`).setLabel("Add Access").setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`cfg_access_remove:${userId}`).setLabel("Remove Access").setStyle(ButtonStyle.Danger)
-            ),
-            backRow()
+            settingSelect(`cfg_access_scope:${userId}`, "Choose an access list", [
+                { label: "Echo", value: "echo", description: "Allow this member to use /echo" },
+                { label: "League Administration", value: "league_admin", description: "Allow restricted league administration commands" }
+            ]),
+            new ActionRowBuilder().addComponents(button("cfg_access", "Choose Another", ButtonStyle.Secondary), button("cfg_home", "Home", ButtonStyle.Secondary))
         ]
     };
 }
 
-function buildScopeActions(userId, scope) {
+function buildAccessActions(userId, scope) {
+    const label = scope === "echo" ? "Echo" : "League Administration";
     return {
-        embeds: [menuEmbed("Configure Access", `Member: <@${userId}>\nScope: **${scope === "echo" ? "Echo" : "League Administration"}**\nChoose Add or Remove.`)],
+        embeds: [pageEmbed(label, `Member: <@${userId}>\n\nChoose whether to grant or remove **${label}** access.`)],
         components: [
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`cfg_access_apply:add:${scope}:${userId}`).setLabel("Add Access").setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`cfg_access_apply:remove:${scope}:${userId}`).setLabel("Remove Access").setStyle(ButtonStyle.Danger)
+                button(`cfg_access_apply:add:${scope}:${userId}`, "Grant Access", ButtonStyle.Success),
+                button(`cfg_access_apply:remove:${scope}:${userId}`, "Remove Access", ButtonStyle.Danger)
             ),
-            backRow()
+            new ActionRowBuilder().addComponents(button(`cfg_access_scope_back:${userId}`, "Back", ButtonStyle.Secondary), button("cfg_home", "Home", ButtonStyle.Secondary))
         ]
     };
 }
 
-async function saveAndReply(interaction, data, title, description) {
-    saveData(data);
-    return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, title, description)], components: mainRows() });
+function buildModal(customId, title, label, value) {
+    return new ModalBuilder()
+        .setCustomId(customId)
+        .setTitle(title)
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId("value")
+                    .setLabel(label)
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+                    .setValue(String(value))
+            )
+        );
 }
 
 function validateRole(interaction, role) {
     if (!role || role.id === interaction.guild.id) return "Choose a normal Discord role instead of @everyone.";
-    if (dataHasTeamRole(interaction, role.id)) return "A registered team role cannot also be used as a shared staff/candidate role.";
+    const data = loadData();
+    if (data.teams[role.id]) return "A registered team role cannot also be used as a shared staff role.";
     if (!role.editable) return `I cannot assign ${role}. Place my bot role above it and make sure I have Manage Roles.`;
     return null;
-}
-
-function dataHasTeamRole(interaction, roleId) {
-    const data = loadData();
-    return Boolean(data.teams[roleId]);
 }
 
 function setRole(data, guildId, key, roleId) {
     data.settings[key][guildId] = roleId;
 }
 
-function buildModal(customId, title, label, value) {
-    const input = new TextInputBuilder()
-        .setCustomId("value")
-        .setLabel(label)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setValue(String(value));
-    return new ModalBuilder().setCustomId(customId).setTitle(title).addComponents(new ActionRowBuilder().addComponents(input));
+function savePanel(interaction, data, title, description, page) {
+    saveData(data);
+    return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, title, description)], components: page.components });
 }
 
 const command = {
-    data: new SlashCommandBuilder().setName("config").setDescription("Open the Super League server configuration panel."),
+    data: new SlashCommandBuilder()
+        .setName("config")
+        .setDescription("Open the Super League server configuration panel."),
 
     async execute(interaction) {
         if (!interaction.guild) return interaction.reply({ embeds: [createErrorEmbed("This command can only be used inside a server.")], ephemeral: true });
         if (!ownerOnly(interaction)) return interaction.reply({ embeds: [createErrorEmbed("Only the server owner can open and use the configuration panel.", interaction.guild)], ephemeral: true });
-
         const data = loadData();
-        await interaction.reply({ embeds: [buildMainEmbed(interaction.guild, data)], components: mainRows() });
+        await interaction.reply({ embeds: [mainEmbed(interaction.guild, data)], components: mainRows() });
     }
 };
 
 async function handleInteraction(interaction) {
     if (!interaction.guild) return;
     if (!ownerOnly(interaction)) {
-        if (interaction.isStringSelectMenu() || interaction.isRoleSelectMenu?.() || interaction.isChannelSelectMenu?.() || interaction.isUserSelectMenu?.() || interaction.isButton()) {
-            return interaction.reply({ embeds: [createErrorEmbed("Only the server owner can use this configuration panel.", interaction.guild)], ephemeral: true });
-        }
-        return;
+        return interaction.reply({ embeds: [createErrorEmbed("Only the server owner can use this configuration panel.", interaction.guild)], ephemeral: true });
     }
 
     const id = interaction.customId;
@@ -324,17 +378,20 @@ async function handleInteraction(interaction) {
     if (interaction.isButton()) {
         if (id === "cfg_home" || id === "cfg_refresh") {
             const data = loadData();
-            return interaction.update({ embeds: [buildMainEmbed(interaction.guild, data)], components: mainRows() });
+            return interaction.update({ embeds: [mainEmbed(interaction.guild, data)], components: mainRows() });
         }
         if (id === "cfg_channels") return interaction.update(buildChannels());
         if (id === "cfg_roles") return interaction.update(buildRoles());
         if (id === "cfg_limits") return interaction.update(buildLimits());
-        if (id === "cfg_applications") return interaction.update(buildApplications(loadData(), interaction.guild.id));
         if (id === "cfg_tickets") return interaction.update(buildTickets());
         if (id === "cfg_access") return interaction.update(buildAccess());
 
-        if (id === "cfg_roster_limit") return interaction.showModal(buildModal("cfg_modal_roster_limit", "Roster Limit", "Maximum players per team", getRosterLimit(loadData(), interaction.guild.id)));
-        if (id === "cfg_demand_limit") return interaction.showModal(buildModal("cfg_modal_demand_limit", "Demand Limit", "Demands per member", getDemandLimit(loadData(), interaction.guild.id)));
+        if (id === "cfg_roster_limit") {
+            return interaction.showModal(buildModal("cfg_modal_roster_limit", "Roster Limit", "Maximum players per team", getRosterLimit(loadData(), interaction.guild.id)));
+        }
+        if (id === "cfg_demand_limit") {
+            return interaction.showModal(buildModal("cfg_modal_demand_limit", "Demand Limit", "Demands per member", getDemandLimit(loadData(), interaction.guild.id)));
+        }
         if (id === "cfg_demand_reset") {
             const data = loadData();
             const usage = data.settings.demandUsage[interaction.guild.id] ?? {};
@@ -344,12 +401,6 @@ async function handleInteraction(interaction) {
             saveData(data);
             return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, "Demands Reset", `Reset used demands for **${count}** members.`)], components: buildLimits().components });
         }
-
-        if (id.startsWith("cfg_access_add:") || id.startsWith("cfg_access_remove:")) {
-            const [, userId] = id.split(":");
-            return interaction.update(buildScopeActions(userId, id.startsWith("cfg_access_add:") ? "echo" : "echo"));
-        }
-
         if (id.startsWith("cfg_access_apply:")) {
             const [, action, scope, userId] = id.split(":");
             const data = loadData();
@@ -362,105 +413,102 @@ async function handleInteraction(interaction) {
                 if (index >= 0) list.splice(index, 1);
             }
             saveData(data);
-            return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, action === "add" ? "Access Granted" : "Access Removed", `<@${userId}> ${action === "add" ? "now has" : "no longer has"} **${scope === "echo" ? "Echo" : "League Administration"}** access.`)], components: buildAccess().components });
+            return interaction.update({
+                embeds: [createSuccessEmbed(interaction.guild, action === "add" ? "Access Granted" : "Access Removed", `<@${userId}> ${action === "add" ? "now has" : "no longer has"} **${scope === "echo" ? "Echo" : "League Administration"}** access.`)],
+                components: buildAccess().components
+            });
+        }
+        if (id.startsWith("cfg_access_scope_back:")) {
+            return interaction.update(buildAccessScope(id.split(":")[1]));
         }
     }
 
     if (interaction.isUserSelectMenu?.() && id === "cfg_access_user") {
-        return interaction.update(buildAccessActions(interaction.values[0]));
+        return interaction.update(buildAccessScope(interaction.values[0]));
     }
 
     if (interaction.isStringSelectMenu()) {
-        if (id.startsWith("cfg_access_scope:")) {
-            const userId = id.split(":")[1];
-            return interaction.update(buildScopeActions(userId, interaction.values[0]));
-        }
-        if (id === "cfg_delete_app") {
-            const data = loadData();
-            const app = ensureApplicationConfig(data, interaction.guild.id);
-            const applicationId = interaction.values[0];
-            const application = app.types[applicationId];
-            if (!application) return interaction.update(buildApplications(data, interaction.guild.id));
-            delete app.types[applicationId];
-            saveData(data);
-            return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, "Application Deleted", `Deleted **${application.name}**.`)], components: buildApplications(data, interaction.guild.id).components });
-        }
+        if (id === "cfg_channel_setting") return interaction.update(buildChannelSetting(interaction.values[0]));
+        if (id === "cfg_role_setting") return interaction.update(buildRoleSetting(interaction.values[0]));
+        if (id === "cfg_ticket_setting") return interaction.update(buildTicketSetting(interaction.values[0]));
+        if (id.startsWith("cfg_access_scope:")) return interaction.update(buildAccessActions(id.split(":")[1], interaction.values[0]));
     }
 
     if (interaction.isChannelSelectMenu?.()) {
         const channelId = interaction.values[0];
         const data = loadData();
 
-        if (id === "cfg_set_log") {
-            data.settings.logChannels[interaction.guild.id] = channelId;
-            return saveAndReply(interaction, data, "Staff Log Channel Set", `Staff audit entries will now be posted in <#${channelId}>.`);
+        if (id.startsWith("cfg_channel_set:")) {
+            const setting = id.split(":")[1];
+            if (setting === "log") {
+                data.settings.logChannels[interaction.guild.id] = channelId;
+                return savePanel(interaction, data, "Staff Logs Updated", `Staff audit logs will now be posted in <#${channelId}>.`, buildChannelSetting("log"));
+            }
+            if (setting === "transaction") {
+                data.settings.transactionChannels[interaction.guild.id] = channelId;
+                return savePanel(interaction, data, "Transactions Updated", `Completed transactions will now be posted in <#${channelId}>.`, buildChannelSetting("transaction"));
+            }
         }
-        if (id === "cfg_set_transaction") {
-            data.settings.transactionChannels[interaction.guild.id] = channelId;
-            return saveAndReply(interaction, data, "Transaction Channel Set", `Completed transactions will now be posted in <#${channelId}>.`);
-        }
-        if (id === "cfg_set_app_review") {
-            ensureApplicationConfig(data, interaction.guild.id).reviewChannelId = channelId;
-            return saveAndReply(interaction, data, "Application Review Channel Set", `Completed applications will be sent to <#${channelId}>.`);
-        }
-        if (id === "cfg_set_app_panel") {
-            ensureApplicationConfig(data, interaction.guild.id).panelChannelId = channelId;
-            return saveAndReply(interaction, data, "Application Panel Channel Set", `The application panel will default to <#${channelId}>.`);
-        }
-        if (id === "cfg_set_ticket_category") {
+
+        if (id.startsWith("cfg_ticket_set:")) {
+            const setting = id.split(":")[1];
             const config = loadTicketConfig();
-            config.guilds[interaction.guild.id] ??= { categoryId: null, panelChannelId: null, panelMessageId: null };
-            config.guilds[interaction.guild.id].categoryId = channelId;
-            saveTicketConfig(config);
-            return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, "Ticket Category Set", `New tickets will be created in <#${channelId}>.`)], components: buildTickets().components });
-        }
-        if (id === "cfg_set_ticket_panel") {
-            const config = loadTicketConfig();
-            config.guilds[interaction.guild.id] ??= { categoryId: null, panelChannelId: null, panelMessageId: null };
-            config.guilds[interaction.guild.id].panelChannelId = channelId;
-            saveTicketConfig(config);
-            return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, "Ticket Panel Channel Set", `The ticket panel channel is now <#${channelId}>.`)], components: buildTickets().components });
+            const ticket = ensureTicketConfig(config, interaction.guild.id);
+            if (setting === "category") {
+                ticket.categoryId = channelId;
+                saveTicketConfig(config);
+                return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, "Ticket Category Updated", `New tickets will be created in <#${channelId}>.`)], components: buildTicketSetting("category").components });
+            }
+            if (setting === "panel") {
+                ticket.panelChannelId = channelId;
+                saveTicketConfig(config);
+                return interaction.update({ embeds: [createSuccessEmbed(interaction.guild, "Ticket Panel Channel Updated", `The ticket panel channel is now <#${channelId}>.`)], components: buildTicketSetting("panel").components });
+            }
         }
     }
 
     if (interaction.isRoleSelectMenu?.()) {
         const roleId = interaction.values[0];
         const role = interaction.guild.roles.cache.get(roleId);
-        const data = loadData();
         const error = validateRole(interaction, role);
         if (error) return interaction.reply({ embeds: [createErrorEmbed(error, interaction.guild)], ephemeral: true });
 
-        if (id === "cfg_set_manager_role") {
-            if (data.settings.assistantManagerRoles[interaction.guild.id] === roleId || data.settings.playerManagerRoles[interaction.guild.id] === roleId) return interaction.reply({ embeds: [createErrorEmbed("The manager role must be different from the assistant manager and player manager roles.", interaction.guild)], ephemeral: true });
-            setRole(data, interaction.guild.id, "managerRoles", roleId);
-            return saveAndReply(interaction, data, "Manager Role Set", `${role} is now the shared manager role.`);
+        const setting = id.startsWith("cfg_role_set:") ? id.split(":")[1] : null;
+        const data = loadData();
+        const guildId = interaction.guild.id;
+        const checks = {
+            manager: ["assistantManagerRoles", "playerManagerRoles", "The manager role must be different from the assistant manager and player manager roles."],
+            assistant: ["managerRoles", "playerManagerRoles", "The assistant manager role must be different from the manager and player manager roles."],
+            player_manager: ["managerRoles", "assistantManagerRoles", "The player manager role must be different from the manager and assistant manager roles."]
+        };
+
+        if (checks[setting]) {
+            const [first, second, message] = checks[setting];
+            if (data.settings[first][guildId] === roleId || data.settings[second][guildId] === roleId) {
+                return interaction.reply({ embeds: [createErrorEmbed(message, interaction.guild)], ephemeral: true });
+            }
         }
-        if (id === "cfg_set_assistant_role") {
-            if (data.settings.managerRoles[interaction.guild.id] === roleId || data.settings.playerManagerRoles[interaction.guild.id] === roleId) return interaction.reply({ embeds: [createErrorEmbed("The assistant manager role must be different from the manager and player manager roles.", interaction.guild)], ephemeral: true });
-            setRole(data, interaction.guild.id, "assistantManagerRoles", roleId);
-            return saveAndReply(interaction, data, "Assistant Manager Role Set", `${role} is now the shared assistant manager role.`);
+        if (setting === "candidate" && data.settings.managerRoles[guildId] === roleId) {
+            return interaction.reply({ embeds: [createErrorEmbed("The candidate role must be different from the manager role.", interaction.guild)], ephemeral: true });
         }
-        if (id === "cfg_set_player_manager_role") {
-            if (data.settings.managerRoles[interaction.guild.id] === roleId || data.settings.assistantManagerRoles[interaction.guild.id] === roleId) return interaction.reply({ embeds: [createErrorEmbed("The player manager role must be different from the manager and assistant manager roles.", interaction.guild)], ephemeral: true });
-            setRole(data, interaction.guild.id, "playerManagerRoles", roleId);
-            return saveAndReply(interaction, data, "Player Manager Role Set", `${role} is now the shared player manager role.`);
-        }
-        if (id === "cfg_set_candidate_role") {
-            if (data.settings.managerRoles[interaction.guild.id] === roleId) return interaction.reply({ embeds: [createErrorEmbed("The candidate role must be different from the manager role.", interaction.guild)], ephemeral: true });
-            setRole(data, interaction.guild.id, "candidateRoles", roleId);
-            return saveAndReply(interaction, data, "Candidate Role Set", `${role} is now the manager lottery pool.`);
-        }
-        if (id === "cfg_set_app_admin") {
-            const app = ensureApplicationConfig(data, interaction.guild.id);
-            app.adminRoleId = roleId;
-            return saveAndReply(interaction, data, "Application Admin Role Set", `Members with ${role} can review applications.`);
-        }
+
+        const keys = {
+            manager: "managerRoles",
+            assistant: "assistantManagerRoles",
+            player_manager: "playerManagerRoles",
+            candidate: "candidateRoles"
+        };
+        if (!keys[setting]) return;
+        setRole(data, guildId, keys[setting], roleId);
+        return savePanel(interaction, data, "Role Updated", `${role} is now the configured ${setting === "candidate" ? "manager candidate pool" : setting.replace("_", " ") + " role"}.`, buildRoleSetting(setting));
     }
 
     if (interaction.isModalSubmit()) {
         const raw = interaction.fields.getTextInputValue("value").trim();
         const value = Number(raw);
-        if (!Number.isInteger(value) || value < 1 || value > 100) return interaction.reply({ embeds: [createErrorEmbed("Enter a whole number from 1 to 100.", interaction.guild)], ephemeral: true });
+        if (!Number.isInteger(value) || value < 1 || value > 100) {
+            return interaction.reply({ embeds: [createErrorEmbed("Enter a whole number from 1 to 100.", interaction.guild)], ephemeral: true });
+        }
         const data = loadData();
         if (interaction.customId === "cfg_modal_roster_limit") {
             data.settings.rosterLimits[interaction.guild.id] = value;
