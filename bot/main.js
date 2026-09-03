@@ -11,8 +11,6 @@ const teamdisband = require("./commands/teamdisband.js");
 const teamlist = require("./commands/teamlist.js");
 const overroster = require("./commands/overroster.js");
 const managerswap = require("./commands/managerswap.js");
-const logchannel = require("./commands/logchannel.js");
-const transactionchannel = require("./commands/transactionchannel.js");
 const release = require("./commands/release.js");
 const applications = require("./commands/applications.js");
 const tickets = require("./commands/tickets.js");
@@ -20,12 +18,7 @@ const moderation = require("./commands/moderation.js");
 const threadlock = require("./commands/threadlock.js");
 const teamstaff = require("./commands/teamstaff.js");
 const teamswap = require("./commands/teamswap.js");
-const managerrole = require("./commands/managerrole.js");
-const assistantmanagerrole = require("./commands/assistantmanagerrole.js");
-const playermanagerrole = require("./commands/playermanagerrole.js");
-const access = require("./commands/access.js");
-const limits = require("./commands/limits.js");
-const demand = require("./commands/demand.js");
+const config = require("./commands/config.js");
 const { createErrorEmbed } = require("./commands/embeds.js");
 const { loadData } = require("./commands/database.js");
 const { sendStaffCommandLog } = require("./commands/stafflog.js");
@@ -88,25 +81,14 @@ const commandList = [
     teamlist.command,
     overroster.command,
     managerswap.command,
-    logchannel.command,
-    transactionchannel.command,
-    managerrole.command,
-    assistantmanagerrole.command,
-    playermanagerrole.command,
-    teamstaff.setCandidateRoleCommand,
     teamstaff.fofillCommand,
     teamstaff.promoteCommand,
     teamstaff.demoteCommand,
-    access.whitelistCommand,
-    access.echoCommand,
-    limits.rosterLimitCommand,
     demand.command,
-    demand.demandLimitCommand,
-    demand.demandResetCommand,
     applications.command,
-    tickets.command,
     moderation.command,
-    threadlock.command
+    threadlock.command,
+    config.command
 ];
 
 for (const command of commandList) commands.set(command.data.name, command);
@@ -148,6 +130,17 @@ client.on("interactionCreate", async interaction => {
             catch (error) { if (!isUnknownInteraction(error)) console.error(error); }
         }
         return;
+    }
+
+    if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu?.() || interaction.isChannelSelectMenu?.() || interaction.isUserSelectMenu?.() || interaction.isModalSubmit()) {
+        if (interaction.customId?.startsWith("cfg_")) {
+            try { await config.handleInteraction(interaction); }
+            catch (error) {
+                if (!isUnknownInteraction(error)) console.error("Config interaction error:", error);
+                await safeInteractionError(interaction, "Something went wrong while updating the configuration.");
+            }
+            return;
+        }
     }
 
     if (interaction.isStringSelectMenu()) {
@@ -208,6 +201,9 @@ client.on("messageCreate", async message => {
 
 client.on("guildMemberUpdate", async (_oldMember, newMember) => {
     const database = loadData();
+    const managerrole = require("./commands/managerrole.js");
+    const assistantmanagerrole = require("./commands/assistantmanagerrole.js");
+    const playermanagerrole = require("./commands/playermanagerrole.js");
     if (managerrole.isManagerInGuild(database, newMember.guild, newMember.id)) {
         await managerrole.syncManagerMemberRoles(newMember, database, "Restoring required manager and team roles").catch(console.error);
     }
@@ -221,6 +217,9 @@ client.on("guildMemberUpdate", async (_oldMember, newMember) => {
 
 client.once("clientReady", async readyClient => {
     console.log(`${readyClient.user.tag} is online`);
+    const managerrole = require("./commands/managerrole.js");
+    const assistantmanagerrole = require("./commands/assistantmanagerrole.js");
+    const playermanagerrole = require("./commands/playermanagerrole.js");
     await managerrole.syncAllManagerRoles(readyClient);
     await assistantmanagerrole.syncAllAssistantManagerRoles(readyClient);
     await playermanagerrole.syncAllPlayerManagerRoles(readyClient);
