@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.command = void 0;
 const discord_js_1 = require("discord.js");
 const database_js_1 = require("./database.js");
-const embeds_js_1 = require("./embeds.js");
 const teamembeds_js_1 = require("./teamembeds.js");
 const rosterutils_js_1 = require("./rosterutils.js");
 
@@ -11,9 +10,7 @@ function buildPlayerFields(players, count, limit) {
     if (!players.length) {
         return [{
             name: `Roster (${count}/${limit})`,
-            value: count > 0
-                ? "Only leadership is on this team (manager / staff)."
-                : "No members are currently registered to this team."
+            value: "No members are currently registered to this team."
         }];
     }
 
@@ -52,7 +49,7 @@ exports.command = {
     async execute(interaction) {
         if (!interaction.guild) {
             await interaction.reply({
-                embeds: [(0, embeds_js_1.createErrorEmbed)("This command can only be used inside a server.")],
+                embeds: [(0, require("./embeds.js").createErrorEmbed)("This command can only be used inside a server.")],
                 ephemeral: true
             });
             return;
@@ -66,7 +63,7 @@ exports.command = {
         if (!teamRole || !team) {
             await interaction.reply({
                 embeds: [
-                    (0, embeds_js_1.createErrorEmbed)("The selected role is not a registered team.", interaction.guild)
+                    (0, require("./embeds.js").createErrorEmbed)("The selected role is not a registered team.", interaction.guild)
                 ],
                 ephemeral: true
             });
@@ -81,7 +78,7 @@ exports.command = {
             console.error(error);
             await interaction.editReply({
                 embeds: [
-                    (0, embeds_js_1.createErrorEmbed)(
+                    (0, require("./embeds.js").createErrorEmbed)(
                         "I could not load the server member list. Make sure Server Members Intent is enabled.",
                         interaction.guild
                     )
@@ -94,19 +91,16 @@ exports.command = {
         const rosterLimit = (0, database_js_1.getRosterLimit)(data, interaction.guild.id);
         const totalCount = allMembers.length;
 
-        const leadershipIds = (0, rosterutils_js_1.getTeamLeadershipIds)(team);
-        const playersOnly = allMembers.filter(member => !leadershipIds.has(member.id));
-
         const playerFields = buildPlayerFields(
-            playersOnly.map(member => `${member}`),
+            allMembers.map(member => `${member}`),
             totalCount,
             rosterLimit
         );
 
-        const embed = (0, embeds_js_1.createStatusEmbed)({
+        const embed = (0, require("./embeds.js").createStatusEmbed)({
             guild: interaction.guild,
             title: `${teamRole.name} Roster`,
-            description: `The current lineup for ${teamRole}.`,
+            description: `The current lineup for ${teamRole}. Managers and team staff count toward the player limit and are included in the roster.`,
             color: teamRole.color || 0x5865f2,
             fields: [
                 {
