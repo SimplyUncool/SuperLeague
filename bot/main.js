@@ -28,41 +28,16 @@ const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN is required. Set it in your .env file.");
 
 const PUBLIC_COMMANDS = new Set([
-    "release",
-    "teamswap",
-    "roster",
-    "teamcreate",
-    "teamdisband",
-    "teamlist",
-    "overroster",
-    "managerswap",
-    "fofill",
-    "promote",
-    "demote",
-    "demand",
-    "threadlock"
+    "release", "teamswap", "roster", "teamcreate", "teamdisband", "teamlist",
+    "overroster", "managerswap", "fofill", "promote", "demote", "demand", "threadlock"
 ]);
 
 function makePublicInteraction(interaction) {
     if (!PUBLIC_COMMANDS.has(interaction.commandName)) return interaction;
-
     const originalReply = interaction.reply.bind(interaction);
     const originalDeferReply = interaction.deferReply.bind(interaction);
-
-    interaction.reply = options => {
-        if (options && typeof options === "object" && !Array.isArray(options)) {
-            options = { ...options, ephemeral: false };
-        }
-        return originalReply(options);
-    };
-
-    interaction.deferReply = options => {
-        if (options && typeof options === "object" && !Array.isArray(options)) {
-            options = { ...options, ephemeral: false };
-        }
-        return originalDeferReply(options);
-    };
-
+    interaction.reply = options => originalReply(options && typeof options === "object" && !Array.isArray(options) ? { ...options, ephemeral: false } : options);
+    interaction.deferReply = options => originalDeferReply(options && typeof options === "object" && !Array.isArray(options) ? { ...options, ephemeral: false } : options);
     return interaction;
 }
 
@@ -73,48 +48,28 @@ const client = new Client({
 
 const commands = new Collection();
 const commandList = [
-    offer.command,
-    release.command,
-    teamswap.command,
-    roster.command,
-    teamcreate.command,
-    teamdisband.command,
-    teamlist.command,
-    overroster.command,
-    managerswap.command,
-    teamstaff.fofillCommand,
-    teamstaff.promoteCommand,
-    teamstaff.demoteCommand,
-    demand.command,
-    applicationcommands.command,
-    moderation.command,
-    threadlock.command,
-    config.command
+    offer.command, release.command, teamswap.command, roster.command, teamcreate.command,
+    teamdisband.command, teamlist.command, overroster.command, managerswap.command,
+    teamstaff.fofillCommand, teamstaff.promoteCommand, teamstaff.demoteCommand, demand.command,
+    applicationcommands.command, moderation.command, threadlock.command, config.command
 ];
-
 for (const command of commandList) commands.set(command.data.name, command);
 
-function isUnknownInteraction(error) {
-    return error?.code === 10062 || error?.rawError?.code === 10062;
-}
-
+function isUnknownInteraction(error) { return error?.code === 10062 || error?.rawError?.code === 10062; }
 async function safeInteractionError(interaction, message) {
     if (interaction.replied || isUnknownInteraction(message)) return;
     const embed = createErrorEmbed(typeof message === "string" ? message : "Something went wrong while running that command.", interaction.guild);
     try {
         if (interaction.deferred) await interaction.editReply({ embeds: [embed] });
         else await interaction.reply({ embeds: [embed], ephemeral: true });
-    } catch (error) {
-        if (!isUnknownInteraction(error)) console.error(error);
-    }
+    } catch (error) { if (!isUnknownInteraction(error)) console.error(error); }
 }
 
 client.on("interactionCreate", async interaction => {
     if (interaction.isAutocomplete()) {
         const command = commands.get(interaction.commandName);
         if (!command?.autocomplete) return;
-        try { await command.autocomplete(interaction); }
-        catch (error) { if (!isUnknownInteraction(error)) console.error("Autocomplete error:", error); }
+        try { await command.autocomplete(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error("Autocomplete error:", error); }
         return;
     }
 
@@ -122,98 +77,58 @@ client.on("interactionCreate", async interaction => {
         const command = commands.get(interaction.commandName);
         if (!command) return;
         try { await command.execute(makePublicInteraction(interaction)); }
-        catch (error) {
-            if (!isUnknownInteraction(error)) console.error(error);
-            await safeInteractionError(interaction, "Something went wrong while running that command.");
-        }
-        finally {
-            try { await sendStaffCommandLog(interaction); }
-            catch (error) { if (!isUnknownInteraction(error)) console.error(error); }
-        }
+        catch (error) { if (!isUnknownInteraction(error)) console.error(error); await safeInteractionError(interaction, "Something went wrong while running that command."); }
+        finally { try { await sendStaffCommandLog(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error(error); } }
         return;
     }
 
     if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu?.() || interaction.isChannelSelectMenu?.() || interaction.isUserSelectMenu?.() || interaction.isModalSubmit()) {
         if (interaction.customId?.startsWith("cfg_")) {
             try { await config.handleInteraction(interaction); }
-            catch (error) {
-                if (!isUnknownInteraction(error)) console.error("Config interaction error:", error);
-                await safeInteractionError(interaction, "Something went wrong while updating the configuration.");
-            }
+            catch (error) { if (!isUnknownInteraction(error)) console.error("Config interaction error:", error); await safeInteractionError(interaction, "Something went wrong while updating the configuration."); }
+            return;
+        }
+        if (interaction.customId?.startsWith("appcfg_")) {
+            try { await applicationcommands.handleInteraction(interaction); }
+            catch (error) { if (!isUnknownInteraction(error)) console.error("Application config interaction error:", error); await safeInteractionError(interaction, "Something went wrong while updating applications."); }
             return;
         }
     }
 
     if (interaction.isStringSelectMenu()) {
         try {
-            if (interaction.customId === "application_select") {
-                await applications.handleApplicationSelect(interaction);
-                return;
-            }
-        } catch (error) {
-            if (!isUnknownInteraction(error)) console.error(error);
-            await safeInteractionError(interaction, "Something went wrong while starting the application.");
-        }
+            if (interaction.customId === "application_select") { await applications.handleApplicationSelect(interaction); return; }
+        } catch (error) { if (!isUnknownInteraction(error)) console.error(error); await safeInteractionError(interaction, "Something went wrong while starting the application."); }
         return;
     }
 
     if (interaction.isButton()) {
         try {
-            if (interaction.customId === "ticket_create" || interaction.customId === "ticket_close") {
-                await tickets.handleButton(interaction);
-                return;
-            }
-            if (interaction.customId.startsWith("application_accept:") || interaction.customId.startsWith("application_reject:")) {
-                await applications.handleApplicationReview(interaction);
-                return;
-            }
-            if (interaction.customId.startsWith("offer_accept:")) {
-                await offer.handleAcceptButton(interaction);
-                return;
-            }
-            if (interaction.customId.startsWith("offer_decline:")) {
-                await offer.handleDeclineButton(interaction);
-                return;
-            }
-        } catch (error) {
-            if (!isUnknownInteraction(error)) console.error(error);
-            await safeInteractionError(interaction, "Something went wrong while handling that interaction.");
-        }
+            if (interaction.customId === "ticket_create" || interaction.customId === "ticket_close") { await tickets.handleButton(interaction); return; }
+            if (interaction.customId.startsWith("application_accept:") || interaction.customId.startsWith("application_reject:")) { await applications.handleApplicationReview(interaction); return; }
+            if (interaction.customId.startsWith("offer_accept:")) { await offer.handleAcceptButton(interaction); return; }
+            if (interaction.customId.startsWith("offer_decline:")) { await offer.handleDeclineButton(interaction); return; }
+        } catch (error) { if (!isUnknownInteraction(error)) console.error(error); await safeInteractionError(interaction, "Something went wrong while handling that interaction."); }
         return;
     }
 
     if (interaction.isModalSubmit()) {
         try {
-            if (interaction.customId.startsWith("offer_confirm:")) {
-                await offer.handleOfferModal(interaction);
-                return;
-            }
-        } catch (error) {
-            if (!isUnknownInteraction(error)) console.error(error);
-            await safeInteractionError(interaction, "Something went wrong while confirming that offer.");
-        }
+            if (interaction.customId.startsWith("offer_confirm:")) { await offer.handleOfferModal(interaction); return; }
+        } catch (error) { if (!isUnknownInteraction(error)) console.error(error); await safeInteractionError(interaction, "Something went wrong while confirming that offer."); }
     }
 });
 
-client.on("messageCreate", async message => {
-    try { await applications.handleApplicationDM(message); }
-    catch (error) { console.error("Application DM error:", error); }
-});
+client.on("messageCreate", async message => { try { await applications.handleApplicationDM(message); } catch (error) { console.error("Application DM error:", error); } });
 
 client.on("guildMemberUpdate", async (_oldMember, newMember) => {
     const database = loadData();
     const managerrole = require("./commands/managerrole.js");
     const assistantmanagerrole = require("./commands/assistantmanagerrole.js");
     const playermanagerrole = require("./commands/playermanagerrole.js");
-    if (managerrole.isManagerInGuild(database, newMember.guild, newMember.id)) {
-        await managerrole.syncManagerMemberRoles(newMember, database, "Restoring required manager and team roles").catch(console.error);
-    }
-    if (assistantmanagerrole.isAssistantManagerInGuild(database, newMember.guild, newMember.id)) {
-        await assistantmanagerrole.syncAssistantManagerMemberRoles(newMember, database, "Restoring required assistant manager and team roles").catch(console.error);
-    }
-    if (playermanagerrole.isPlayerManagerInGuild(database, newMember.guild, newMember.id)) {
-        await playermanagerrole.syncPlayerManagerMemberRoles(newMember, database, "Restoring required player manager and team roles").catch(console.error);
-    }
+    if (managerrole.isManagerInGuild(database, newMember.guild, newMember.id)) await managerrole.syncManagerMemberRoles(newMember, database, "Restoring required manager and team roles").catch(console.error);
+    if (assistantmanagerrole.isAssistantManagerInGuild(database, newMember.guild, newMember.id)) await assistantmanagerrole.syncAssistantManagerMemberRoles(newMember, database, "Restoring required assistant manager and team roles").catch(console.error);
+    if (playermanagerrole.isPlayerManagerInGuild(database, newMember.guild, newMember.id)) await playermanagerrole.syncPlayerManagerMemberRoles(newMember, database, "Restoring required player manager and team roles").catch(console.error);
 });
 
 client.once("clientReady", async readyClient => {
@@ -224,20 +139,14 @@ client.once("clientReady", async readyClient => {
     await managerrole.syncAllManagerRoles(readyClient);
     await assistantmanagerrole.syncAllAssistantManagerRoles(readyClient);
     await playermanagerrole.syncAllPlayerManagerRoles(readyClient);
-
     const rest = new REST({ version: "10" }).setToken(token);
     try {
         console.log("Refreshing slash commands...");
         const guildIds = [...readyClient.guilds.cache.keys()];
-        for (let i = 0; i < guildIds.length; i++) {
-            await rest.put(Routes.applicationGuildCommands(readyClient.user.id, guildIds[i]), { body: [] });
-            if (i < guildIds.length - 1) await new Promise(resolve => setTimeout(resolve, 350));
-        }
+        for (let i = 0; i < guildIds.length; i++) { await rest.put(Routes.applicationGuildCommands(readyClient.user.id, guildIds[i]), { body: [] }); if (i < guildIds.length - 1) await new Promise(resolve => setTimeout(resolve, 350)); }
         await rest.put(Routes.applicationCommands(readyClient.user.id), { body: commands.map(command => command.data.toJSON()) });
         console.log("Commands refreshed and loaded!");
-    } catch (error) {
-        console.error("Failed to refresh commands:", error);
-    }
+    } catch (error) { console.error("Failed to refresh commands:", error); }
 });
 
 client.login(token);
