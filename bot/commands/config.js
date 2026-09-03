@@ -21,9 +21,7 @@ const {
 const { loadData, saveData, getRosterLimit, getDemandLimit } = require("./database.js");
 const { createErrorEmbed, createSuccessEmbed } = require("./embeds.js");
 
-const dbPath = path.resolve(
-    process.env.SUPER_LEAGUE_DB_PATH || path.resolve(__dirname, "..", "users.json")
-);
+const dbPath = path.resolve(process.env.SUPER_LEAGUE_DB_PATH || path.join(__dirname, "..", "users.json"));
 const ticketConfigPath = path.join(path.dirname(dbPath), "tickets.json");
 
 function ownerOnly(interaction) {
@@ -248,7 +246,6 @@ function buildLimits() {
 }
 
 function buildTickets() {
-    const ticket = ensureTicketConfig(loadTicketConfig(), "__preview__");
     return {
         embeds: [pageEmbed("Tickets", "Configure the support ticket system.\n\nChoose a setting first, then select its Discord channel.")],
         components: [
@@ -343,10 +340,6 @@ function validateRole(interaction, role) {
     if (data.teams[role.id]) return "A registered team role cannot also be used as a shared staff role.";
     if (!role.editable) return `I cannot assign ${role}. Place my bot role above it and make sure I have Manage Roles.`;
     return null;
-}
-
-function setRole(data, guildId, key, roleId) {
-    data.settings[key][guildId] = roleId;
 }
 
 function savePanel(interaction, data, title, description, page) {
@@ -499,7 +492,7 @@ async function handleInteraction(interaction) {
             candidate: "candidateRoles"
         };
         if (!keys[setting]) return;
-        setRole(data, guildId, keys[setting], roleId);
+        data.settings[keys[setting]][guildId] = roleId;
         return savePanel(interaction, data, "Role Updated", `${role} is now the configured ${setting === "candidate" ? "manager candidate pool" : setting.replace("_", " ") + " role"}.`, buildRoleSetting(setting));
     }
 
