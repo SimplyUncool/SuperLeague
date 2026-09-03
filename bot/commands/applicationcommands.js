@@ -1,163 +1,71 @@
 "use strict";
 
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, RoleSelectMenuBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } = require("discord.js");
 const { loadData, saveData } = require("./database.js");
 const { createErrorEmbed, createSuccessEmbed } = require("./embeds.js");
-const { canRunLeagueAdmin } = require("./permissions.js");
 
-function getGuildConfig(data, guildId) {
-    if (!data.settings.applications) data.settings.applications = {};
-    if (!data.settings.applications[guildId]) {
-        data.settings.applications[guildId] = {
-            reviewChannelId: null,
-            adminRoleId: null,
-            panelChannelId: null,
-            panelMessageId: null,
-            types: {}
-        };
-    }
-    const config = data.settings.applications[guildId];
-    config.types ??= {};
-    return config;
+const pendingCreates = new Map();
+function ownerOnly(i) { return Boolean(i.guild && i.guild.ownerId === i.user.id); }
+function config(data, guildId) {
+    data.settings.applications ??= {};
+    data.settings.applications[guildId] ??= { reviewChannelId: null, adminRoleId: null, panelChannelId: null, panelMessageId: null, types: {} };
+    data.settings.applications[guildId].types ??= {};
+    return data.settings.applications[guildId];
 }
-
-function getApplicationId(name) {
-    return name.toLowerCase().trim()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "")
-        .slice(0, 80);
+function appId(name) { return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80); }
+function home(guild, data) {
+    const c = config(data, guild.id), apps = Object.values(c.types);
+    return new EmbedBuilder().setColor(0x5865f2).setAuthor({ name: guild.name, iconURL: guild.iconURL({ size: 128 }) ?? undefined }).setTitle("Application Management").setDescription("Manage application types, questions, review settings and the public application panel from one place. **Only the server owner can use this panel.**").addFields(
+        { name: "Review Channel", value: c.reviewChannelId ? `<#${c.reviewChannelId}>` : "Not configured", inline: true },
+        { name: "Admin Role", value: c.adminRoleId ? `<@&${c.adminRoleId}>` : "Not configured", inline: true },
+        { name: "Panel Channel", value: c.panelChannelId ? `<#${c.panelChannelId}>` : "Not configured", inline: true },
+        { name: "Application Types", value: String(apps.length), inline: true },
+        { name: "Questions", value: String(apps.reduce((n, a) => n + (a.questions?.length ?? 0), 0)), inline: true }
+    );
 }
-
-const command = {
-    data: new SlashCommandBuilder()
-        .setName("applications")
-        .setDescription("Create application types and manage their questions.")
-        .addSubcommand(subcommand => subcommand
-            .setName("create")
-            .setDescription("Create an application type.")
-            .addStringOption(option => option
-                .setName("name")
-                .setDescription("Name of the application.")
-                .setRequired(true)
-                .setMaxLength(100))
-            .addRoleOption(option => option
-                .setName("role")
-                .setDescription("Role given when accepted.")
-                .setRequired(true))
-            .addStringOption(option => option
-                .setName("emoji")
-                .setDescription("Optional emoji.")
-                .setRequired(false)
-                .setMaxLength(50)))
-        .addSubcommandGroup(group => group
-            .setName("question")
-            .setDescription("Manage application questions.")
-            .addSubcommand(subcommand => subcommand
-                .setName("add")
-                .setDescription("Add a question.")
-                .addStringOption(option => option
-                    .setName("application")
-                    .setDescription("Application.")
-                    .setRequired(true)
-                    .setAutocomplete(true))
-                .addStringOption(option => option
-                    .setName("question")
-                    .setDescription("Question to ask.")
-                    .setRequired(true)
-                    .setMaxLength(1000)))
-            .addSubcommand(subcommand => subcommand
-                .setName("remove")
-                .setDescription("Remove a question.")
-                .addStringOption(option => option
-                    .setName("application")
-                    .setDescription("Application.")
-                    .setRequired(true)
-                    .setAutocomplete(true))
-                .addIntegerOption(option => option
-                    .setName("number")
-                    .setDescription("Question number.")
-                    .setRequired(true)
-                    .setMinValue(1)))
-            .addSubcommand(subcommand => subcommand
-                .setName("list")
-                .setDescription("List application questions.")
-                .addStringOption(option => option
-                    .setName("application")
-                    .setDescription("Application.")
-                    .setRequired(true)
-                    .setAutocomplete(true)))),
-
-    async autocomplete(interaction) {
-        const data = loadData();
-        const config = getGuildConfig(data, interaction.guildId);
-        const focused = interaction.options.getFocused().toLowerCase();
-        await interaction.respond(
-            Object.entries(config.types)
-                .filter(([, application]) => application.name.toLowerCase().includes(focused))
-                .slice(0, 25)
-                .map(([id, application]) => ({ name: application.name, value: id }))
-        );
-    },
-
-    async execute(interaction) {
-        if (!interaction.guild) {
-            return interaction.reply({ embeds: [createErrorEmbed("This command can only be used inside a server.")], ephemeral: true });
-        }
-
-        const data = loadData();
-        if (!canRunLeagueAdmin(interaction, data)) {
-            return interaction.reply({ embeds: [createErrorEmbed("You do not have permission to configure applications.", interaction.guild)], ephemeral: true });
-        }
-
-        const config = getGuildConfig(data, interaction.guild.id);
-        const group = interaction.options.getSubcommandGroup(false);
-        const subcommand = interaction.options.getSubcommand();
-
-        if (!group && subcommand === "create") {
-            const name = interaction.options.getString("name", true).trim();
-            const role = interaction.options.getRole("role", true);
-            const emoji = interaction.options.getString("emoji");
-            const id = getApplicationId(name);
-
-            if (!id) return interaction.reply({ embeds: [createErrorEmbed("That application name is invalid.", interaction.guild)], ephemeral: true });
-            if (config.types[id]) return interaction.reply({ embeds: [createErrorEmbed("An application with that name already exists.", interaction.guild)], ephemeral: true });
-            if (Object.keys(config.types).length >= 25) return interaction.reply({ embeds: [createErrorEmbed("You can have a maximum of 25 application types.", interaction.guild)], ephemeral: true });
-            if (role.id === interaction.guild.id || !role.editable) return interaction.reply({ embeds: [createErrorEmbed("I cannot assign that role. Choose a normal role below my highest bot role.", interaction.guild)], ephemeral: true });
-
-            config.types[id] = { name, roleId: role.id, emoji: emoji || null, questions: [] };
-            saveData(data);
-            return interaction.reply({ embeds: [createSuccessEmbed(interaction.guild, "Application Created", `Created **${name}**. Accepted applicants will receive ${role}. Use the question commands to add questions.`)] });
-        }
-
-        if (group !== "question") return;
-
-        const id = interaction.options.getString("application", true);
-        const application = config.types[id];
-        if (!application) return interaction.reply({ embeds: [createErrorEmbed("That application does not exist.", interaction.guild)], ephemeral: true });
-
-        if (subcommand === "add") {
-            if (application.questions.length >= 20) return interaction.reply({ embeds: [createErrorEmbed("An application can have a maximum of 20 questions.", interaction.guild)], ephemeral: true });
-            const question = interaction.options.getString("question", true).trim();
-            if (!question) return interaction.reply({ embeds: [createErrorEmbed("The question cannot be empty.", interaction.guild)], ephemeral: true });
-            application.questions.push(question);
-            saveData(data);
-            return interaction.reply({ embeds: [createSuccessEmbed(interaction.guild, "Question Added", `Added question **#${application.questions.length}** to **${application.name}**.`)] });
-        }
-
-        if (subcommand === "remove") {
-            const number = interaction.options.getInteger("number", true);
-            if (number < 1 || number > application.questions.length) return interaction.reply({ embeds: [createErrorEmbed("That question number does not exist.", interaction.guild)], ephemeral: true });
-            application.questions.splice(number - 1, 1);
-            saveData(data);
-            return interaction.reply({ embeds: [createSuccessEmbed(interaction.guild, "Question Removed", `Removed question **#${number}** from **${application.name}**.`)] });
-        }
-
-        if (subcommand === "list") {
-            if (!application.questions.length) return interaction.reply({ embeds: [createErrorEmbed(`**${application.name}** has no questions.`, interaction.guild)], ephemeral: true });
-            const description = application.questions.map((question, index) => `**${index + 1}.** ${question}`).join("\n\n");
-            return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`${application.name} Questions`).setDescription(description.slice(0, 4096))] });
-        }
+function homeRows() { return [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("appcfg_create").setLabel("Create Application").setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId("appcfg_manage").setLabel("Manage Applications").setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId("appcfg_settings").setLabel("Settings").setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId("appcfg_publish").setLabel("Publish Panel").setStyle(ButtonStyle.Primary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("appcfg_refresh").setLabel("Refresh").setStyle(ButtonStyle.Secondary))]; }
+function back(id = "appcfg_home") { return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(id).setLabel("Back").setStyle(ButtonStyle.Secondary)); }
+function manage(data, guildId, selected) {
+    const c = config(data, guildId), entries = Object.entries(c.types);
+    if (!entries.length) return { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle("Manage Applications").setDescription("No application types exist yet. Create one from the main panel.")], components: [back()] };
+    const app = selected ? c.types[selected] : null;
+    return { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle("Manage Applications").setDescription(app ? `**Selected:** ${app.emoji || "📋"} ${app.name}\nQuestions: **${app.questions?.length ?? 0}**` : "Select an application below.")], components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId("appcfg_select").setPlaceholder("Select an application").addOptions(entries.slice(0, 25).map(([id, a]) => ({ label: a.name.slice(0, 100), description: `${a.questions?.length ?? 0} questions`.slice(0, 100), value: id })))), ...(app ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`appcfg_questions:${selected}`).setLabel("Manage Questions").setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`appcfg_delete:${selected}`).setLabel("Delete Application").setStyle(ButtonStyle.Danger))] : []), back()] };
+}
+function questions(data, guildId, id) {
+    const a = config(data, guildId).types[id]; if (!a) return manage(data, guildId);
+    const qs = a.questions ?? [];
+    return { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`${a.emoji || "📋"} ${a.name} • Questions`).setDescription(qs.length ? qs.map((q, i) => `**${i + 1}.** ${q}`).join("\n\n").slice(0, 4096) : "No questions have been added yet.")], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`appcfg_addq:${id}`).setLabel("Add Question").setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`appcfg_delq:${id}`).setLabel("Remove Question").setStyle(ButtonStyle.Danger)), back("appcfg_manage")] };
+}
+function settings() { return { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle("Application Settings").setDescription("Configure the review channel, application admin role and default public panel channel.")], components: [new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId("appcfg_review").setPlaceholder("Select review channel").setChannelTypes([ChannelType.GuildText])), new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId("appcfg_admin").setPlaceholder("Select application admin role")), new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId("appcfg_panel").setPlaceholder("Select default panel channel").setChannelTypes([ChannelType.GuildText])), back()] }; }
+function publish() { return { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle("Publish Application Panel").setDescription("Select a channel to post the public application dropdown. It will also become the default panel channel.")], components: [new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId("appcfg_publish").setPlaceholder("Select panel channel").setChannelTypes([ChannelType.GuildText])), back()] }; }
+function createModal() { return new ModalBuilder().setCustomId("appcfg_create_modal").setTitle("Create Application").addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("name").setLabel("Application name").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("emoji").setLabel("Emoji (optional)").setStyle(TextInputStyle.Short).setMaxLength(50).setRequired(false))); }
+function questionModal(id) { return new ModalBuilder().setCustomId(`appcfg_qmodal:${id}`).setTitle("Add Question").addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("question").setLabel("Question").setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(true))); }
+function removeModal(id) { return new ModalBuilder().setCustomId(`appcfg_rqmodal:${id}`).setTitle("Remove Question").addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("number").setLabel("Question number").setStyle(TextInputStyle.Short).setMaxLength(3).setRequired(true))); }
+function publicPanel(guild, c) { const menu = new StringSelectMenuBuilder().setCustomId("application_select").setPlaceholder("Select an application...").addOptions(Object.entries(c.types).slice(0, 25).map(([id, a]) => { const o = { label: a.name.slice(0, 100), description: `Apply for ${a.name}`.slice(0, 100), value: id }; if (a.emoji) o.emoji = a.emoji; return o; })); return { embeds: [new EmbedBuilder().setColor(0x5865f2).setAuthor({ name: guild.name, iconURL: guild.iconURL({ size: 128 }) ?? undefined }).setTitle("Applications").setDescription("Select the position or role you would like to apply for using the dropdown below.\n\nCompleted applications are sent to the configured review channel. Accepted applicants receive the configured role.").setFooter({ text: guild.name })], components: [new ActionRowBuilder().addComponents(menu)] }; }
+const command = { data: new SlashCommandBuilder().setName("applications").setDescription("Open the application management panel."), async execute(i) { if (!i.guild) return i.reply({ embeds: [createErrorEmbed("This command can only be used inside a server.")], ephemeral: true }); if (!ownerOnly(i)) return i.reply({ embeds: [createErrorEmbed("Only the server owner can open and use the application panel.", i.guild)], ephemeral: true }); const data = loadData(); await i.reply({ embeds: [home(i.guild, data)], components: homeRows() }); } };
+async function handleInteraction(i) {
+    if (!i.guild || !i.customId?.startsWith("appcfg_")) return;
+    if (!ownerOnly(i)) return i.reply({ embeds: [createErrorEmbed("Only the server owner can use this application panel.", i.guild)], ephemeral: true });
+    const id = i.customId, data = loadData(), c = config(data, i.guild.id);
+    if (i.isButton()) {
+        if (id === "appcfg_home" || id === "appcfg_refresh") return i.update({ embeds: [home(i.guild, data)], components: homeRows() });
+        if (id === "appcfg_create") return i.showModal(createModal());
+        if (id === "appcfg_manage") return i.update(manage(data, i.guild.id));
+        if (id === "appcfg_settings") return i.update(settings());
+        if (id === "appcfg_publish") return i.update(publish());
+        if (id.startsWith("appcfg_questions:")) return i.update(questions(data, i.guild.id, id.split(":")[1]));
+        if (id.startsWith("appcfg_addq:")) return i.showModal(questionModal(id.split(":")[1]));
+        if (id.startsWith("appcfg_delq:")) return i.showModal(removeModal(id.split(":")[1]));
+        if (id.startsWith("appcfg_delete:")) { const aid = id.split(":")[1], a = c.types[aid]; if (!a) return i.update(manage(data, i.guild.id)); delete c.types[aid]; saveData(data); return i.update({ embeds: [createSuccessEmbed(i.guild, "Application Deleted", `Deleted **${a.name}**.`)], components: manage(data, i.guild.id).components }); }
     }
-};
-
-module.exports = { command };
+    if (i.isStringSelectMenu() && id === "appcfg_select") return i.update(manage(data, i.guild.id, i.values[0]));
+    if (i.isChannelSelectMenu?.()) { const ch = i.values[0]; if (id === "appcfg_review") c.reviewChannelId = ch; else if (id === "appcfg_panel") c.panelChannelId = ch; else if (id === "appcfg_publish") { if (!Object.keys(c.types).length) return i.update({ embeds: [createErrorEmbed("Create at least one application type first.", i.guild)], components: publish().components }); const channel = i.guild.channels.cache.get(ch); if (!channel?.isTextBased()) return i.update({ embeds: [createErrorEmbed("That channel cannot receive the application panel.", i.guild)], components: publish().components }); try { const msg = await channel.send(publicPanel(i.guild, c)); c.panelChannelId = ch; c.panelMessageId = msg.id; saveData(data); return i.update({ embeds: [createSuccessEmbed(i.guild, "Application Panel Published", `The public panel was sent to <#${ch}>.`)], components: publish().components }); } catch (e) { console.error(e); return i.update({ embeds: [createErrorEmbed("I could not send the application panel to that channel.", i.guild)], components: publish().components }); } } saveData(data); return i.update(settings()); }
+    if (i.isRoleSelectMenu?.() && id === "appcfg_admin") { c.adminRoleId = i.values[0]; saveData(data); return i.update(settings()); }
+    if (i.isRoleSelectMenu?.() && id === "appcfg_create_role") { const pending = pendingCreates.get(i.user.id); if (!pending) return i.reply({ embeds: [createErrorEmbed("That create session expired. Start again from `/applications`.", i.guild)], ephemeral: true }); const role = i.guild.roles.cache.get(i.values[0]); if (!role || role.id === i.guild.id || !role.editable) return i.update({ embeds: [createErrorEmbed("I cannot assign that role. Choose a normal role below the bot's highest role.", i.guild)], components: [] }); const aid = appId(pending.name); if (c.types[aid]) return i.update({ embeds: [createErrorEmbed("An application with that name already exists.", i.guild)], components: [] }); c.types[aid] = { name: pending.name, roleId: role.id, emoji: pending.emoji, questions: [] }; pendingCreates.delete(i.user.id); saveData(data); return i.update({ embeds: [createSuccessEmbed(i.guild, "Application Created", `Created **${pending.name}**. Accepted applicants receive ${role}.`)], components: [] }); }
+    if (i.isModalSubmit()) {
+        if (id === "appcfg_create_modal") { const name = i.fields.getTextInputValue("name").trim(), emoji = i.fields.getTextInputValue("emoji").trim() || null, aid = appId(name); if (!name || !aid) return i.reply({ embeds: [createErrorEmbed("That application name is invalid.", i.guild)], ephemeral: true }); if (Object.keys(c.types).length >= 25 || c.types[aid]) return i.reply({ embeds: [createErrorEmbed(c.types[aid] ? "An application with that name already exists." : "You can have a maximum of 25 application types.", i.guild)], ephemeral: true }); pendingCreates.set(i.user.id, { name, emoji }); return i.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle("Create Application • Choose Role").setDescription(`Application: **${name}**\n\nSelect the role accepted applicants should receive.`)], components: [new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId("appcfg_create_role").setPlaceholder("Select accepted-applicant role"))], ephemeral: true }); }
+        if (id.startsWith("appcfg_qmodal:")) { const aid = id.split(":")[1], a = c.types[aid]; if (!a) return i.reply({ embeds: [createErrorEmbed("That application no longer exists.", i.guild)], ephemeral: true }); a.questions ??= []; if (a.questions.length >= 20) return i.reply({ embeds: [createErrorEmbed("An application can have a maximum of 20 questions.", i.guild)], ephemeral: true }); a.questions.push(i.fields.getTextInputValue("question").trim()); saveData(data); return i.update(questions(data, i.guild.id, aid)); }
+        if (id.startsWith("appcfg_rqmodal:")) { const aid = id.split(":")[1], a = c.types[aid], n = Number.parseInt(i.fields.getTextInputValue("number"), 10); if (!a || !Number.isInteger(n) || n < 1 || n > (a?.questions?.length ?? 0)) return i.reply({ embeds: [createErrorEmbed("That question number does not exist.", i.guild)], ephemeral: true }); a.questions.splice(n - 1, 1); saveData(data); return i.update(questions(data, i.guild.id, aid)); }
+    }
+}
+module.exports = { command, handleInteraction };
