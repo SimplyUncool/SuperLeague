@@ -33,6 +33,45 @@ const { sendStaffCommandLog } = require("./commands/stafflog.js");
 const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN is required. Set it in your .env file.");
 
+const PUBLIC_COMMANDS = new Set([
+    "release",
+    "teamswap",
+    "roster",
+    "teamcreate",
+    "teamdisband",
+    "teamlist",
+    "overroster",
+    "managerswap",
+    "fofill",
+    "promote",
+    "demote",
+    "demand",
+    "threadlock"
+]);
+
+function makePublicInteraction(interaction) {
+    if (!PUBLIC_COMMANDS.has(interaction.commandName)) return interaction;
+
+    const originalReply = interaction.reply.bind(interaction);
+    const originalDeferReply = interaction.deferReply.bind(interaction);
+
+    interaction.reply = options => {
+        if (options && typeof options === "object" && !Array.isArray(options)) {
+            options = { ...options, ephemeral: false };
+        }
+        return originalReply(options);
+    };
+
+    interaction.deferReply = options => {
+        if (options && typeof options === "object" && !Array.isArray(options)) {
+            options = { ...options, ephemeral: false };
+        }
+        return originalDeferReply(options);
+    };
+
+    return interaction;
+}
+
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
     partials: [Partials.Channel]
@@ -99,7 +138,7 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isChatInputCommand()) {
         const command = commands.get(interaction.commandName);
         if (!command) return;
-        try { await command.execute(interaction); }
+        try { await command.execute(makePublicInteraction(interaction)); }
         catch (error) {
             if (!isUnknownInteraction(error)) console.error(error);
             await safeInteractionError(interaction, "Something went wrong while running that command.");
