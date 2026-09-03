@@ -13,6 +13,7 @@ const overroster = require("./commands/overroster.js");
 const managerswap = require("./commands/managerswap.js");
 const release = require("./commands/release.js");
 const applications = require("./commands/applications.js");
+const applicationcommands = require("./commands/applicationcommands.js");
 const tickets = require("./commands/tickets.js");
 const moderation = require("./commands/moderation.js");
 const threadlock = require("./commands/threadlock.js");
@@ -85,7 +86,7 @@ const commandList = [
     teamstaff.promoteCommand,
     teamstaff.demoteCommand,
     demand.command,
-    applications.command,
+    applicationcommands.command,
     moderation.command,
     threadlock.command,
     config.command
