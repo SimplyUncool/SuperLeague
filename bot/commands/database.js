@@ -44,7 +44,8 @@ function createEmptyDatabase() {
             applications: {},
             activeApplications: {},
             applicationReviews: {},
-            offers: {}
+            offers: {},
+            robloxLinks: {}
         }
     };
 }
@@ -146,6 +147,10 @@ function normalizeData(parsed) {
             offers:
                 rawSettings.offers && typeof rawSettings.offers === "object"
                     ? rawSettings.offers
+                    : {},
+            robloxLinks:
+                rawSettings.robloxLinks && typeof rawSettings.robloxLinks === "object"
+                    ? rawSettings.robloxLinks
                     : {}
         }
     };
