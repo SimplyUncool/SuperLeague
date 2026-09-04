@@ -21,6 +21,7 @@ const threadlock = require("./commands/threadlock.js");
 const teamstaff = require("./commands/teamstaff.js");
 const teamswap = require("./commands/teamswap.js");
 const config = require("./commands/config.js");
+const robloxverify = require("./commands/robloxverify.js");
 const { createErrorEmbed } = require("./commands/embeds.js");
 const { loadData } = require("./commands/database.js");
 const { sendStaffCommandLog } = require("./commands/stafflog.js");
@@ -52,7 +53,8 @@ const commandList = [
     offer.command, release.command, teamswap.command, roster.command, teamcreate.command,
     teamdisband.command, teamlist.command, overroster.command, managerswap.command,
     teamstaff.fofillCommand, teamstaff.promoteCommand, teamstaff.demoteCommand, demand.command,
-    applicationcommands.command, moderation.command, threadlock.command, config.command
+    applicationcommands.command, moderation.command, threadlock.command, config.command,
+    robloxverify.command
 ];
 for (const command of commandList) commands.set(command.data.name, command);
 
@@ -106,6 +108,7 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isButton()) {
         try {
             if (interaction.customId === "ticket_create" || interaction.customId === "ticket_close") { await tickets.handleButton(interaction); return; }
+            if (interaction.customId === "roblox_verify") { await robloxverify.handleButton(interaction); return; }
             if (interaction.customId.startsWith("application_accept:") || interaction.customId.startsWith("application_reject:")) { await applications.handleApplicationReview(interaction); return; }
             if (interaction.customId.startsWith("offer_accept:")) { await offer.handleAcceptButton(interaction); return; }
             if (interaction.customId.startsWith("offer_decline:")) { await offer.handleDeclineButton(interaction); return; }
@@ -140,6 +143,11 @@ client.once("clientReady", async readyClient => {
     await managerrole.syncAllManagerRoles(readyClient);
     await assistantmanagerrole.syncAllAssistantManagerRoles(readyClient);
     await playermanagerrole.syncAllPlayerManagerRoles(readyClient);
+    if (process.env.ROBLOX_CLIENT_ID && process.env.ROBLOX_CLIENT_SECRET && process.env.ROBLOX_REDIRECT_URI && process.env.ROBLOX_GUILD_ID && process.env.ROBLOX_VERIFIED_ROLE_ID) {
+        robloxverify.startWebServer(readyClient);
+    } else {
+        console.warn("Roblox verification is disabled: missing one or more ROBLOX_* environment variables.");
+    }
     const rest = new REST({ version: "10" }).setToken(token);
     try {
         console.log("Refreshing slash commands...");
