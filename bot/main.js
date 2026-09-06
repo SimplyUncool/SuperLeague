@@ -23,6 +23,9 @@ const teamstaff = require("./commands/teamstaff.js");
 const teamswap = require("./commands/teamswap.js");
 const config = require("./commands/config.js");
 const robloxverify = require("./commands/robloxverify.js");
+const invites = require("./commands/invites.js");
+const inviteTracker = require("./inviteTracker.js");
+const inviteConfig = require("./inviteConfig.js");
 const { createErrorEmbed } = require("./commands/embeds.js");
 const { loadData } = require("./commands/database.js");
 const { sendStaffCommandLog } = require("./commands/stafflog.js");
@@ -58,7 +61,7 @@ const commandList = [
     teamdisband.command, teamlist.command, overroster.command, managerswap.command,
     teamstaff.fofillCommand, teamstaff.promoteCommand, teamstaff.demoteCommand, demand.command,
     applicationcommands.command, moderation.command, threadlock.command, config.command,
-    robloxverify.command, ticketclose.command
+    robloxverify.command, ticketclose.command, invites.command
 ];
 for (const command of commandList) commands.set(command.data.name, command);
 
@@ -91,7 +94,10 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu?.() || interaction.isChannelSelectMenu?.() || interaction.isUserSelectMenu?.() || interaction.isModalSubmit()) {
         if (interaction.customId?.startsWith("cfg_")) {
-            try { await config.handleInteraction(interaction); }
+            try {
+                if (await inviteConfig.handleInteraction(interaction)) return;
+                await config.handleInteraction(interaction);
+            }
             catch (error) { if (!isUnknownInteraction(error)) console.error("Config interaction error:", error); await safeInteractionError(interaction, "Something went wrong while updating the configuration."); }
             return;
         }
@@ -130,6 +136,21 @@ client.on("interactionCreate", async interaction => {
 
 client.on("messageCreate", async message => { try { await applications.handleApplicationDM(message); } catch (error) { console.error("Application DM error:", error); } });
 
+client.on("guildMemberAdd", async member => {
+    try { await inviteTracker.handleMemberAdd(member); }
+    catch (error) { console.error("Invite tracking join error:", error); }
+});
+
+client.on("guildMemberRemove", async member => {
+    try { await inviteTracker.handleMemberRemove(member); }
+    catch (error) { console.error("Invite tracking leave error:", error); }
+});
+
+client.on("guildCreate", async guild => {
+    try { await inviteTracker.refreshGuild(guild); }
+    catch (error) { console.error(`Invite tracking initialization error for ${guild.name}:`, error); }
+});
+
 client.on("guildMemberUpdate", async (_oldMember, newMember) => {
     const database = loadData();
     const managerrole = require("./commands/managerrole.js");
@@ -148,6 +169,7 @@ client.once("clientReady", async readyClient => {
     await managerrole.syncAllManagerRoles(readyClient);
     await assistantmanagerrole.syncAllAssistantManagerRoles(readyClient);
     await playermanagerrole.syncAllPlayerManagerRoles(readyClient);
+    await inviteTracker.initialize(readyClient);
     if (process.env.ROBLOX_CLIENT_ID && process.env.ROBLOX_CLIENT_SECRET && process.env.ROBLOX_REDIRECT_URI && process.env.ROBLOX_GUILD_ID && process.env.ROBLOX_VERIFIED_ROLE_ID) {
         robloxverify.startWebServer(readyClient);
     } else {
