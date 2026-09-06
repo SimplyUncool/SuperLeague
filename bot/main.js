@@ -16,6 +16,7 @@ const applications = require("./commands/applications.js");
 const applicationcommands = require("./commands/applicationcommands.js");
 const demand = require("./commands/demand.js");
 const tickets = require("./commands/tickets.js");
+const ticketclose = require("./commands/ticketclose.js");
 const moderation = require("./commands/moderation.js");
 const threadlock = require("./commands/threadlock.js");
 const teamstaff = require("./commands/teamstaff.js");
@@ -57,7 +58,7 @@ const commandList = [
     teamdisband.command, teamlist.command, overroster.command, managerswap.command,
     teamstaff.fofillCommand, teamstaff.promoteCommand, teamstaff.demoteCommand, demand.command,
     applicationcommands.command, moderation.command, threadlock.command, config.command,
-    robloxverify.command
+    robloxverify.command, ticketclose.command
 ];
 for (const command of commandList) commands.set(command.data.name, command);
 
@@ -110,7 +111,8 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.isButton()) {
         try {
-            if (interaction.customId === "ticket_create" || interaction.customId === "ticket_close") { await tickets.handleButton(interaction); return; }
+            if (interaction.customId === "ticket_close") { await ticketclose.handleButton(interaction); return; }
+            if (interaction.customId === "ticket_create") { await tickets.handleButton(interaction); return; }
             if (interaction.customId === "roblox_verify") { await robloxverify.handleButton(interaction); return; }
             if (interaction.customId.startsWith("application_accept:") || interaction.customId.startsWith("application_reject:")) { await applications.handleApplicationReview(interaction); return; }
             if (interaction.customId.startsWith("offer_accept:")) { await offer.handleAcceptButton(interaction); return; }
