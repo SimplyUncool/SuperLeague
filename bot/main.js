@@ -25,6 +25,7 @@ const robloxverify = require("./commands/robloxverify.js");
 const { createErrorEmbed } = require("./commands/embeds.js");
 const { loadData } = require("./commands/database.js");
 const { sendStaffCommandLog } = require("./commands/stafflog.js");
+const { initializeSecurity } = require("./security.js");
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN is required. Set it in your .env file.");
@@ -47,6 +48,8 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
     partials: [Partials.Channel]
 });
+
+initializeSecurity(client);
 
 const commands = new Collection();
 const commandList = [
