@@ -1,125 +1,24 @@
 "use strict";
-
+const fs = require("fs");
+const path = require("path");
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require("discord.js");
-
-function targetMember(interaction) {
-    return interaction.options.getMember("user");
-}
-
-function getReason(interaction) {
-    return interaction.options.getString("reason") || "No reason provided.";
-}
-
-function canModerate(interaction, member) {
-    if (!member) return "That user is not in this server.";
-    if (member.id === interaction.user.id) return "You cannot moderate yourself.";
-    if (member.id === interaction.client.user.id) return "You cannot moderate the bot.";
-    if (!member.moderatable) return "I cannot moderate that user. Check my role hierarchy and permissions.";
-    if (interaction.guild.ownerId !== interaction.user.id && member.roles.highest.position >= interaction.member.roles.highest.position) {
-        return "You cannot moderate a member with an equal or higher role than yours.";
-    }
-    return null;
-}
-
-function reply(interaction, title, description) {
-    return interaction.reply({
-        embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(title).setDescription(description)]
-    });
-}
-
-const command = {
-    data: new SlashCommandBuilder()
-        .setName("mod")
-        .setDescription("Moderation tools.")
-        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers | PermissionFlagsBits.BanMembers)
-        .addSubcommand(sub => sub
-            .setName("mute")
-            .setDescription("Mute a member using Discord's native timeout system.")
-            .addUserOption(o => o.setName("user").setDescription("Member to mute.").setRequired(true))
-            .addIntegerOption(o => o.setName("duration").setDescription("Duration in minutes (1-40320).").setRequired(true).setMinValue(1).setMaxValue(40320))
-            .addStringOption(o => o.setName("reason").setDescription("Reason.").setMaxLength(512)))
-        .addSubcommand(sub => sub
-            .setName("unmute")
-            .setDescription("Remove a member's mute.")
-            .addUserOption(o => o.setName("user").setDescription("Member to unmute.").setRequired(true))
-            .addStringOption(o => o.setName("reason").setDescription("Reason.").setMaxLength(512)))
-        .addSubcommand(sub => sub
-            .setName("timeout")
-            .setDescription("Timeout a member.")
-            .addUserOption(o => o.setName("user").setDescription("Member to timeout.").setRequired(true))
-            .addIntegerOption(o => o.setName("duration").setDescription("Duration in minutes (1-40320).").setRequired(true).setMinValue(1).setMaxValue(40320))
-            .addStringOption(o => o.setName("reason").setDescription("Reason.").setMaxLength(512)))
-        .addSubcommand(sub => sub
-            .setName("untimeout")
-            .setDescription("Remove a member's timeout.")
-            .addUserOption(o => o.setName("user").setDescription("Member to untimeout.").setRequired(true))
-            .addStringOption(o => o.setName("reason").setDescription("Reason.").setMaxLength(512)))
-        .addSubcommand(sub => sub
-            .setName("ban")
-            .setDescription("Ban a member.")
-            .addUserOption(o => o.setName("user").setDescription("Member to ban.").setRequired(true))
-            .addIntegerOption(o => o.setName("delete_days").setDescription("Days of message history to delete (0-7).").setMinValue(0).setMaxValue(7))
-            .addStringOption(o => o.setName("reason").setDescription("Reason.").setMaxLength(512)))
-        .addSubcommand(sub => sub
-            .setName("unban")
-            .setDescription("Unban a user.")
-            .addStringOption(o => o.setName("user_id").setDescription("User ID.").setRequired(true).setMaxLength(20))
-            .addStringOption(o => o.setName("reason").setDescription("Reason.").setMaxLength(512))),
-
-    async execute(interaction) {
-        if (!interaction.guild) return interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
-
-        const sub = interaction.options.getSubcommand();
-        const reason = getReason(interaction);
-
-        if (sub === "unban") {
-            if (!interaction.memberPermissions.has(PermissionFlagsBits.BanMembers)) {
-                return interaction.reply({ content: "You need the Ban Members permission.", ephemeral: true });
-            }
-            const userId = interaction.options.getString("user_id", true).trim();
-            if (!/^\d{17,20}$/.test(userId)) return interaction.reply({ content: "That is not a valid Discord user ID.", ephemeral: true });
-            try {
-                await interaction.guild.members.unban(userId, reason);
-                return reply(interaction, "User Unbanned", `<@${userId}> has been unbanned.\n\n**Reason:** ${reason}`);
-            } catch (error) {
-                console.error("Unban error:", error);
-                return interaction.reply({ content: "I could not unban that user. They may not be banned, or I may lack Ban Members permission.", ephemeral: true });
-            }
-        }
-
-        if (sub === "ban" && !interaction.memberPermissions.has(PermissionFlagsBits.BanMembers)) {
-            return interaction.reply({ content: "You need the Ban Members permission.", ephemeral: true });
-        }
-        if (["mute", "unmute", "timeout", "untimeout"].includes(sub) && !interaction.memberPermissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return interaction.reply({ content: "You need the Moderate Members permission.", ephemeral: true });
-        }
-
-        const member = targetMember(interaction);
-        const hierarchyError = canModerate(interaction, member);
-        if (hierarchyError) return interaction.reply({ content: hierarchyError, ephemeral: true });
-
-        try {
-            if (sub === "ban") {
-                const days = interaction.options.getInteger("delete_days") ?? 0;
-                await member.ban({ deleteMessageSeconds: days * 86400, reason });
-                return reply(interaction, "Member Banned", `<@${member.id}> has been banned.\n\n**Reason:** ${reason}`);
-            }
-
-            if (sub === "mute" || sub === "timeout") {
-                const duration = interaction.options.getInteger("duration", true);
-                await member.timeout(duration * 60 * 1000, reason);
-                return reply(interaction, sub === "mute" ? "Member Muted" : "Member Timed Out", `<@${member.id}> has been ${sub === "mute" ? "muted" : "timed out"} for **${duration} minute(s)**.\n\n**Reason:** ${reason}`);
-            }
-
-            if (sub === "unmute" || sub === "untimeout") {
-                await member.timeout(null, reason);
-                return reply(interaction, sub === "unmute" ? "Member Unmuted" : "Timeout Removed", `<@${member.id}> is no longer timed out.\n\n**Reason:** ${reason}`);
-            }
-        } catch (error) {
-            console.error("Moderation error:", error);
-            return interaction.reply({ content: "I could not complete that moderation action. Check my permissions and role hierarchy.", ephemeral: true });
-        }
-    }
-};
-
-module.exports = { command };
+const dbPath = path.resolve(process.env.SUPER_LEAGUE_DB_PATH || path.join(__dirname, "..", "users.json"));
+const warningsPath = path.join(path.dirname(dbPath), "warnings.json");
+function targetMember(i){return i.options.getMember("user");} function getReason(i){return i.options.getString("reason")||"No reason provided.";}
+function canModerate(i,m){if(!m)return "That user is not in this server.";if(m.id===i.user.id)return "You cannot moderate yourself.";if(m.id===i.client.user.id)return "You cannot moderate the bot.";if(!m.moderatable)return "I cannot moderate that user. Check my role hierarchy and permissions.";if(i.guild.ownerId!==i.user.id&&m.roles.highest.position>=i.member.roles.highest.position)return "You cannot moderate a member with an equal or higher role than yours.";return null;}
+function reply(i,title,description){return i.reply({embeds:[new EmbedBuilder().setColor(0x5865f2).setTitle(title).setDescription(description)]});}
+function loadWarnings(){try{if(!fs.existsSync(warningsPath))return {guilds:{}};const p=JSON.parse(fs.readFileSync(warningsPath,"utf8"));return p&&typeof p==="object"?p:{guilds:{}};}catch(e){console.error("Failed to load warnings:",e);return {guilds:{}};}}
+function saveWarnings(data){fs.mkdirSync(path.dirname(warningsPath),{recursive:true});const tmp=`${warningsPath}.tmp-${process.pid}-${Date.now()}`;fs.writeFileSync(tmp,JSON.stringify(data,null,2),{mode:0o600});fs.renameSync(tmp,warningsPath);}
+function addWarning(guildId,userId,moderatorId,reason){const data=loadWarnings();data.guilds??={};data.guilds[guildId]??={};data.guilds[guildId][userId]??=[];data.guilds[guildId][userId].push({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`,moderatorId,reason,createdAt:new Date().toISOString()});saveWarnings(data);return data.guilds[guildId][userId].length;}
+const command={data:new SlashCommandBuilder().setName("mod").setDescription("Moderation tools.").setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers|PermissionFlagsBits.BanMembers)
+.addSubcommand(s=>s.setName("warn").setDescription("Warn and record a member.").addUserOption(o=>o.setName("user").setDescription("Member to warn.").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("Reason.").setRequired(true).setMaxLength(512)))
+.addSubcommand(s=>s.setName("mute").setDescription("Mute a member using Discord's native timeout system.").addUserOption(o=>o.setName("user").setDescription("Member to mute.").setRequired(true)).addIntegerOption(o=>o.setName("duration").setDescription("Duration in minutes (1-40320).").setRequired(true).setMinValue(1).setMaxValue(40320)).addStringOption(o=>o.setName("reason").setDescription("Reason.").setMaxLength(512)))
+.addSubcommand(s=>s.setName("unmute").setDescription("Remove a member's mute.").addUserOption(o=>o.setName("user").setDescription("Member to unmute.").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("Reason.").setMaxLength(512)))
+.addSubcommand(s=>s.setName("timeout").setDescription("Timeout a member.").addUserOption(o=>o.setName("user").setDescription("Member to timeout.").setRequired(true)).addIntegerOption(o=>o.setName("duration").setDescription("Duration in minutes (1-40320).").setRequired(true).setMinValue(1).setMaxValue(40320)).addStringOption(o=>o.setName("reason").setDescription("Reason.").setMaxLength(512)))
+.addSubcommand(s=>s.setName("untimeout").setDescription("Remove a member's timeout.").addUserOption(o=>o.setName("user").setDescription("Member to untimeout.").setRequired(true)).addStringOption(o=>o.setName("reason").setDescription("Reason.").setMaxLength(512)))
+.addSubcommand(s=>s.setName("ban").setDescription("Ban a member.").addUserOption(o=>o.setName("user").setDescription("Member to ban.").setRequired(true)).addIntegerOption(o=>o.setName("delete_days").setDescription("Days of message history to delete (0-7).").setMinValue(0).setMaxValue(7)).addStringOption(o=>o.setName("reason").setDescription("Reason.").setMaxLength(512)))
+.addSubcommand(s=>s.setName("unban").setDescription("Unban a user.").addStringOption(o=>o.setName("user_id").setDescription("User ID.").setRequired(true).setMaxLength(20)).addStringOption(o=>o.setName("reason").setDescription("Reason.").setMaxLength(512))),
+async execute(i){if(!i.guild)return i.reply({content:"This command can only be used in a server.",ephemeral:true});const sub=i.options.getSubcommand(),reason=getReason(i),required=["ban","unban"].includes(sub)?PermissionFlagsBits.BanMembers:PermissionFlagsBits.ModerateMembers;if(!i.memberPermissions.has(required))return i.reply({content:`You need the ${required===PermissionFlagsBits.BanMembers?"Ban Members":"Moderate Members"} permission.`,ephemeral:true});
+if(sub==="unban"){const id=i.options.getString("user_id",true).trim();if(!/^\d{17,20}$/.test(id))return i.reply({content:"That is not a valid Discord user ID.",ephemeral:true});try{await i.guild.members.unban(id,reason);return reply(i,"User Unbanned",`<@${id}> has been unbanned.\n\n**Reason:** ${reason}`);}catch(e){console.error("Unban error:",e);return i.reply({content:"I could not unban that user. They may not be banned, or I may lack Ban Members permission.",ephemeral:true});}}
+const member=targetMember(i),hierarchyError=canModerate(i,member);if(hierarchyError)return i.reply({content:hierarchyError,ephemeral:true});try{if(sub==="warn"){const count=addWarning(i.guild.id,member.id,i.user.id,reason);await member.send(`You have been warned in **${i.guild.name}**.\n\n**Reason:** ${reason}`).catch(()=>{});return reply(i,"Member Warned",`<@${member.id}> has been warned.\n\n**Reason:** ${reason}\n**Total warnings:** ${count}`);}if(sub==="ban"){const days=i.options.getInteger("delete_days")??0;await member.ban({deleteMessageSeconds:days*86400,reason});return reply(i,"Member Banned",`<@${member.id}> has been banned.\n\n**Reason:** ${reason}`);}if(sub==="mute"||sub==="timeout"){const duration=i.options.getInteger("duration",true);await member.timeout(duration*60*1000,reason);return reply(i,sub==="mute"?"Member Muted":"Member Timed Out",`<@${member.id}> has been ${sub==="mute"?"muted":"timed out"} for **${duration} minute(s)**.\n\n**Reason:** ${reason}`);}if(sub==="unmute"||sub==="untimeout"){await member.timeout(null,reason);return reply(i,sub==="unmute"?"Member Unmuted":"Timeout Removed",`<@${member.id}> is no longer timed out.\n\n**Reason:** ${reason}`);}}catch(e){console.error("Moderation error:",e);return i.reply({content:"I could not complete that moderation action. Check my permissions and role hierarchy.",ephemeral:true});}}};
+module.exports={command};

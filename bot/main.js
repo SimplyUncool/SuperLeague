@@ -26,6 +26,8 @@ const robloxverify = require("./commands/robloxverify.js");
 const invites = require("./commands/invites.js");
 const inviteTracker = require("./inviteTracker.js");
 const inviteConfig = require("./inviteConfig.js");
+const afk = require("./afk.js");
+const afkCommand = require("./commands/afk.js");
 const { createErrorEmbed } = require("./commands/embeds.js");
 const { loadData } = require("./commands/database.js");
 const { sendStaffCommandLog } = require("./commands/stafflog.js");
@@ -61,7 +63,7 @@ const commandList = [
     teamdisband.command, teamlist.command, overroster.command, managerswap.command,
     teamstaff.fofillCommand, teamstaff.promoteCommand, teamstaff.demoteCommand, demand.command,
     applicationcommands.command, moderation.command, threadlock.command, config.command,
-    robloxverify.command, ticketclose.command, invites.command
+    robloxverify.command, ticketclose.command, invites.command, afkCommand.command
 ];
 for (const command of commandList) commands.set(command.data.name, command);
 
@@ -134,7 +136,10 @@ client.on("interactionCreate", async interaction => {
     }
 });
 
-client.on("messageCreate", async message => { try { await applications.handleApplicationDM(message); } catch (error) { console.error("Application DM error:", error); } });
+client.on("messageCreate", async message => {
+    try { await applications.handleApplicationDM(message); } catch (error) { console.error("Application DM error:", error); }
+    try { await afk.handleMessage(message); } catch (error) { console.error("AFK handler error:", error); }
+});
 
 client.on("guildMemberAdd", async member => {
     try { await inviteTracker.handleMemberAdd(member); }
