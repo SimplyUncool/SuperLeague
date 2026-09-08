@@ -21,6 +21,7 @@ const STATE_TTL_MS = 10 * 60 * 1000;
 const VERIFICATION_COOLDOWN_MS = 30 * 1000;
 const MAX_PENDING = 1000;
 const PENDING_FILE = path.resolve(__dirname, "..", ".roblox-oauth-pending.json");
+const IP_LOG_FILE = path.resolve(__dirname, "..", "data", "roblox-verification-ip.log");
 const pending = new Map();
 const activeByDiscord = new Map();
 const cooldowns = new Map();
@@ -201,6 +202,33 @@ function escapeHtml(value) {
     return String(value).replace(/[&<>\"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[character]));
 }
 
+function clientIp(request) {
+    const remote = String(request.socket?.remoteAddress || "");
+    const trustedProxy = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+    if (trustedProxy) {
+        const forwarded = request.headers["x-forwarded-for"];
+        if (typeof forwarded === "string" && forwarded.trim()) return forwarded.split(",")[0].trim();
+        const realIp = request.headers["x-real-ip"];
+        if (typeof realIp === "string" && realIp.trim()) return realIp.trim();
+    }
+    return remote || "unknown";
+}
+
+function logVerificationIp(request) {
+    try {
+        const dir = path.dirname(IP_LOG_FILE);
+        fs.mkdirSync(dir, { recursive: true });
+        const fd = fs.openSync(IP_LOG_FILE, "a", 0o600);
+        try {
+            fs.writeSync(fd, `${JSON.stringify({ timestamp: new Date().toISOString(), ip: clientIp(request), event: "roblox_oauth_callback" })}\n`);
+        } finally {
+            fs.closeSync(fd);
+        }
+    } catch (error) {
+        console.error("Failed to write Roblox verification IP log:", error.message);
+    }
+}
+
 function page(title, body) {
     return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Super League Verification</title><style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#111827;color:#f9fafb}.card{max-width:520px;padding:32px;border-radius:18px;background:#1f2937;text-align:center;box-shadow:0 12px 40px #0006}h1{margin-top:0}p{color:#d1d5db}</style></head><body><div class="card"><h1>${escapeHtml(title)}</h1>${body}</div></body></html>`;
 }
@@ -218,7 +246,8 @@ function sendHtml(response, status, html) {
     response.end(html);
 }
 
-async function handleCallback(client, requestUrl, response) {
+async function handleCallback(client, request, requestUrl, response) {
+    logVerificationIp(request);
     const params = new URL(requestUrl, "http://localhost").searchParams;
     const state = params.get("state");
     const code = params.get("code");
@@ -308,7 +337,7 @@ function startWebServer(client) {
                 return;
             }
             if (url.pathname === "/roblox/callback") {
-                await handleCallback(client, url.toString(), response);
+                await handleCallback(client, request, url.toString(), response);
                 return;
             }
             if (url.pathname === "/health") {
