@@ -23,13 +23,13 @@ a{color:inherit;text-decoration:none}
 .kicker{font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;margin-bottom:18px}
 h1{margin:0;font-size:clamp(3.5rem,9vw,8rem);line-height:.9;letter-spacing:-.075em}
 h1 span{display:inline-block;min-width:6ch}
-.roblox-mark{display:inline-block;width:.72em;height:.72em;margin-left:.12em;vertical-align:-.03em;transform:rotate(14deg);fill:currentColor}
+.roblox-wordmark{display:inline-block;height:.72em;width:auto;max-width:5em;margin-left:.12em;vertical-align:-.02em;object-fit:contain}
 .lead{max-width:620px;margin:25px auto 0;color:var(--muted);font-size:17px}
 .actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:30px}
 .btn{padding:12px 19px;border:1px solid rgba(255,255,255,.55);font-weight:750;background:rgba(0,0,0,.2)}
 .btn.primary{background:#fff;color:#080808;border-color:#fff}
 .btn:hover{transform:translateY(-1px)}
-@media(max-width:650px){.nav{height:68px;padding:0 18px}.links{gap:15px}.hero{min-height:520px}h1{font-size:clamp(3rem,15vw,5.5rem)}.lead{font-size:15px}}
+@media(max-width:650px){.nav{height:68px;padding:0 18px}.links{gap:15px}.hero{min-height:520px}h1{font-size:clamp(3rem,15vw,5.5rem)}.lead{font-size:15px}.roblox-wordmark{max-width:4em}}
 </style>
 </head>
 <body>
@@ -41,7 +41,7 @@ h1 span{display:inline-block;min-width:6ch}
 </nav>
 <div class="hero-copy">
 <div class="kicker">Super League</div>
-<h1>The best league<br>for <span id="rotating">casuals</span><br>on <svg class="roblox-mark" viewBox="0 0 100 100" role="img" aria-label="Roblox"><path d="M17 17 83 4l13 66-66 13zM43 36l21-4 4 21-21 4z"/></svg></h1>
+<h1>The best league<br>for <span id="rotating">casuals</span><br>on <img class="roblox-wordmark" src="ROBLOX.png" alt="Roblox"></h1>
 <p class="lead">A competitive football league built for players, teams and communities on Roblox.</p>
 <div class="actions">
 <a class="btn primary" href="terms.html">League terms</a>
