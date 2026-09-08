@@ -2,6 +2,8 @@
 
 const http = require("http");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const {
     SlashCommandBuilder,
     ActionRowBuilder,
@@ -18,6 +20,7 @@ const USERINFO_URL = "https://apis.roblox.com/oauth/v1/userinfo";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const VERIFICATION_COOLDOWN_MS = 30 * 1000;
 const MAX_PENDING = 1000;
+const PENDING_FILE = path.resolve(__dirname, "..", ".roblox-oauth-pending.json");
 const pending = new Map();
 const activeByDiscord = new Map();
 const cooldowns = new Map();
@@ -42,6 +45,11 @@ function base64url(buffer) {
     return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function base64urlDecode(value) {
+    const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
+    return Buffer.from(normalized + "=".repeat((4 - normalized.length % 4) % 4), "base64");
+}
+
 function randomString(bytes = 32) {
     return base64url(crypto.randomBytes(bytes));
 }
@@ -56,15 +64,76 @@ function timingSafeEqualStrings(a, b) {
     return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
+function pendingKey() {
+    return crypto.createHash("sha256").update(required("ROBLOX_CLIENT_SECRET"), "utf8").digest();
+}
+
+function encryptPending(transaction) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", pendingKey(), iv);
+    const ciphertext = Buffer.concat([cipher.update(JSON.stringify(transaction), "utf8"), cipher.final()]);
+    return { iv: base64url(iv), tag: base64url(cipher.getAuthTag()), data: base64url(ciphertext) };
+}
+
+function decryptPending(record) {
+    try {
+        const decipher = crypto.createDecipheriv("aes-256-gcm", pendingKey(), base64urlDecode(record.iv));
+        decipher.setAuthTag(base64urlDecode(record.tag));
+        return JSON.parse(Buffer.concat([decipher.update(base64urlDecode(record.data)), decipher.final()]).toString("utf8"));
+    } catch {
+        return null;
+    }
+}
+
+function readPersistentPending() {
+    try {
+        if (!fs.existsSync(PENDING_FILE)) return {};
+        const parsed = JSON.parse(fs.readFileSync(PENDING_FILE, "utf8"));
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+        console.error("Failed to read Roblox OAuth pending sessions:", error.message);
+        return {};
+    }
+}
+
+function writePersistentPending(records) {
+    const dir = path.dirname(PENDING_FILE);
+    fs.mkdirSync(dir, { recursive: true });
+    const temp = `${PENDING_FILE}.tmp-${process.pid}-${Date.now()}`;
+    fs.writeFileSync(temp, JSON.stringify(records), { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(temp, PENDING_FILE);
+}
+
+function persistPending() {
+    const records = {};
+    for (const [state, transaction] of pending) records[state] = encryptPending(transaction);
+    writePersistentPending(records);
+}
+
+function restorePending() {
+    const records = readPersistentPending();
+    const now = Date.now();
+    for (const [state, record] of Object.entries(records)) {
+        const transaction = decryptPending(record);
+        if (!transaction || !transaction.discordId || !transaction.guildId || !transaction.codeVerifier || !Number.isFinite(transaction.createdAt) || now - transaction.createdAt > STATE_TTL_MS) continue;
+        pending.set(state, transaction);
+        activeByDiscord.set(transaction.discordId, state);
+    }
+    persistPending();
+}
+
 function cleanupPending() {
     const now = Date.now();
     const cutoff = now - STATE_TTL_MS;
+    let changed = false;
     for (const [state, transaction] of pending) {
         if (transaction.createdAt < cutoff) {
             pending.delete(state);
             if (activeByDiscord.get(transaction.discordId) === state) activeByDiscord.delete(transaction.discordId);
+            changed = true;
         }
     }
+    if (changed) persistPending();
     for (const [discordId, timestamp] of cooldowns) {
         if (timestamp + VERIFICATION_COOLDOWN_MS < now) cooldowns.delete(discordId);
     }
@@ -82,9 +151,11 @@ function authorizationUrl(discordId) {
 
     const state = randomString(32);
     const codeVerifier = randomString(64);
-    pending.set(state, { discordId, guildId: cfg.guildId, codeVerifier, createdAt: Date.now() });
+    const transaction = { discordId, guildId: cfg.guildId, codeVerifier, createdAt: Date.now() };
+    pending.set(state, transaction);
     activeByDiscord.set(discordId, state);
     cooldowns.set(discordId, Date.now());
+    persistPending();
 
     const url = new URL(AUTHORIZE_URL);
     url.searchParams.set("client_id", cfg.clientId);
@@ -158,18 +229,26 @@ async function handleCallback(client, requestUrl, response) {
             const transaction = pending.get(state);
             pending.delete(state);
             if (transaction && activeByDiscord.get(transaction.discordId) === state) activeByDiscord.delete(transaction.discordId);
+            persistPending();
         }
         throw new Error("Roblox authorization was cancelled or denied. Start verification again if needed.");
     }
     if (!state || !code || params.get("error_description")) throw new Error("The Roblox authorization response was incomplete.");
 
-    const transaction = pending.get(state);
+    let transaction = pending.get(state);
+    if (!transaction) {
+        const record = readPersistentPending()[state];
+        if (record) transaction = decryptPending(record);
+        if (transaction) pending.set(state, transaction);
+    }
     if (!transaction || Date.now() - transaction.createdAt > STATE_TTL_MS) {
         if (transaction) pending.delete(state);
+        persistPending();
         throw new Error("This verification session expired. Start verification again.");
     }
     pending.delete(state);
     if (activeByDiscord.get(transaction.discordId) === state) activeByDiscord.delete(transaction.discordId);
+    persistPending();
 
     const cfg = config();
     if (!timingSafeEqualStrings(transaction.guildId, cfg.guildId)) throw new Error("Invalid verification server.");
@@ -217,6 +296,8 @@ async function handleCallback(client, requestUrl, response) {
 function startWebServer(client) {
     const port = Number(process.env.PORT || 3000);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid TCP port.");
+
+    restorePending();
 
     const server = http.createServer(async (request, response) => {
         try {
