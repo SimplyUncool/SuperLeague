@@ -172,7 +172,6 @@ async function handleCallback(client, requestUrl, response) {
     if (activeByDiscord.get(transaction.discordId) === state) activeByDiscord.delete(transaction.discordId);
 
     const cfg = config();
-    if (transaction.guildId !== cfg.guildId) throw new Error("Invalid verification server.");
     if (!timingSafeEqualStrings(transaction.guildId, cfg.guildId)) throw new Error("Invalid verification server.");
 
     const tokens = await exchangeCode(code, transaction.codeVerifier);
@@ -301,4 +300,4 @@ const command = {
     startWebServer
 };
 
-module.exports = { command, startWebServer };
+module.exports = { command, startWebServer, handleButton };
