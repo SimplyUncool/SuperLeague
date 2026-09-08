@@ -23,7 +23,8 @@ a{color:inherit;text-decoration:none}
 .hero-copy{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1100px,calc(100% - 40px));text-align:center}
 .kicker{font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;margin-bottom:18px}
 h1{margin:0;font-size:clamp(3.5rem,9vw,8rem);line-height:.9;letter-spacing:-.075em}
-h1 span{display:inline-block;min-width:6ch}
+h1 .line{display:block;white-space:nowrap}
+h1 .rotating-word{display:inline-block;min-width:6ch}
 .roblox-wordmark{display:inline-block;height:.72em;width:auto;max-width:5em;margin-left:.12em;vertical-align:-.02em;object-fit:contain}
 .lead{max-width:620px;margin:25px auto 0;color:var(--muted);font-size:17px}
 .actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:30px}
@@ -42,7 +43,7 @@ h1 span{display:inline-block;min-width:6ch}
 </nav>
 <div class="hero-copy">
 <div class="kicker">Super League</div>
-<h1>The best league<br>for <span id="rotating">casuals</span><br>on <img class="roblox-wordmark" src="ROBLOX.svg" alt="Roblox"></h1>
+<h1><span class="line">The best league</span><span class="line">for <span class="rotating-word" id="rotating">casuals</span></span><span class="line">on <img class="roblox-wordmark" src="ROBLOX.svg" alt="Roblox"></span></h1>
 <p class="lead">A competitive football league built for players, teams and communities on Roblox.</p>
 <div class="actions">
 <a class="btn primary" href="terms.html">League terms</a>
