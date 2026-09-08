@@ -50,29 +50,31 @@ function pkceChallenge(verifier) {
     return base64url(crypto.createHash("sha256").update(verifier).digest());
 }
 
+function timingSafeEqualStrings(a, b) {
+    const left = Buffer.from(String(a));
+    const right = Buffer.from(String(b));
+    return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 function cleanupPending() {
-    const cutoff = Date.now() - STATE_TTL_MS;
+    const now = Date.now();
+    const cutoff = now - STATE_TTL_MS;
     for (const [state, transaction] of pending) {
         if (transaction.createdAt < cutoff) {
             pending.delete(state);
             if (activeByDiscord.get(transaction.discordId) === state) activeByDiscord.delete(transaction.discordId);
         }
     }
-
     for (const [discordId, timestamp] of cooldowns) {
-        if (timestamp + VERIFICATION_COOLDOWN_MS < Date.now()) cooldowns.delete(discordId);
+        if (timestamp + VERIFICATION_COOLDOWN_MS < now) cooldowns.delete(discordId);
     }
 }
 
 function authorizationUrl(discordId) {
     cleanupPending();
     const cfg = config();
-
     const lastStart = cooldowns.get(discordId);
-    if (lastStart && Date.now() - lastStart < VERIFICATION_COOLDOWN_MS) {
-        throw new Error("Please wait a few seconds before starting verification again.");
-    }
-
+    if (lastStart && Date.now() - lastStart < VERIFICATION_COOLDOWN_MS) throw new Error("Please wait a few seconds before starting verification again.");
     if (pending.size >= MAX_PENDING) throw new Error("Verification is temporarily busy. Please try again shortly.");
 
     const previousState = activeByDiscord.get(discordId);
@@ -80,13 +82,7 @@ function authorizationUrl(discordId) {
 
     const state = randomString(32);
     const codeVerifier = randomString(64);
-
-    pending.set(state, {
-        discordId,
-        guildId: cfg.guildId,
-        codeVerifier,
-        createdAt: Date.now()
-    });
+    pending.set(state, { discordId, guildId: cfg.guildId, codeVerifier, createdAt: Date.now() });
     activeByDiscord.set(discordId, state);
     cooldowns.set(discordId, Date.now());
 
@@ -103,40 +99,23 @@ function authorizationUrl(discordId) {
 
 async function exchangeCode(code, codeVerifier) {
     const cfg = config();
-    const body = new URLSearchParams({
-        code,
-        code_verifier: codeVerifier,
-        grant_type: "authorization_code",
-        client_id: cfg.clientId,
-        client_secret: cfg.clientSecret
-    });
-
-    const response = await fetch(TOKEN_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body
-    });
-
+    const body = new URLSearchParams({ code, code_verifier: codeVerifier, grant_type: "authorization_code", client_id: cfg.clientId, client_secret: cfg.clientSecret });
+    const response = await fetch(TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
     if (!response.ok) {
         const text = await response.text();
         console.error(`Roblox token exchange failed (${response.status}):`, text.slice(0, 500));
         throw new Error("Roblox authorization could not be completed.");
     }
-
     return response.json();
 }
 
 async function getUserInfo(accessToken) {
-    const response = await fetch(USERINFO_URL, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-    });
-
+    const response = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!response.ok) {
         const text = await response.text();
         console.error(`Roblox userinfo failed (${response.status}):`, text.slice(0, 500));
         throw new Error("Roblox account information could not be retrieved.");
     }
-
     return response.json();
 }
 
@@ -148,13 +127,7 @@ function ensureLinks(data, guildId) {
 }
 
 function escapeHtml(value) {
-    return String(value).replace(/[&<>\"']/g, character => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        "\"": "&quot;",
-        "'": "&#39;"
-    }[character]));
+    return String(value).replace(/[&<>\"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[character]));
 }
 
 function page(title, body) {
@@ -170,13 +143,7 @@ function errorPage(message) {
 }
 
 function sendHtml(response, status, html) {
-    response.writeHead(status, {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-        "Referrer-Policy": "no-referrer",
-        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"
-    });
+    response.writeHead(status, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Pragma": "no-cache", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'", "X-Frame-Options": "DENY" });
     response.end(html);
 }
 
@@ -187,21 +154,26 @@ async function handleCallback(client, requestUrl, response) {
     const oauthError = params.get("error");
 
     if (oauthError) {
-        if (state) pending.delete(state);
+        if (state) {
+            const transaction = pending.get(state);
+            pending.delete(state);
+            if (transaction && activeByDiscord.get(transaction.discordId) === state) activeByDiscord.delete(transaction.discordId);
+        }
         throw new Error("Roblox authorization was cancelled or denied. Start verification again if needed.");
     }
-    if (!state || !code) throw new Error("The Roblox authorization response was incomplete.");
+    if (!state || !code || params.get("error_description")) throw new Error("The Roblox authorization response was incomplete.");
 
     const transaction = pending.get(state);
-    pending.delete(state);
-    if (activeByDiscord.get(transaction?.discordId) === state) activeByDiscord.delete(transaction.discordId);
-
     if (!transaction || Date.now() - transaction.createdAt > STATE_TTL_MS) {
+        if (transaction) pending.delete(state);
         throw new Error("This verification session expired. Start verification again.");
     }
+    pending.delete(state);
+    if (activeByDiscord.get(transaction.discordId) === state) activeByDiscord.delete(transaction.discordId);
 
     const cfg = config();
     if (transaction.guildId !== cfg.guildId) throw new Error("Invalid verification server.");
+    if (!timingSafeEqualStrings(transaction.guildId, cfg.guildId)) throw new Error("Invalid verification server.");
 
     const tokens = await exchangeCode(code, transaction.codeVerifier);
     if (!tokens.access_token) throw new Error("Roblox did not return an access token.");
@@ -220,22 +192,13 @@ async function handleCallback(client, requestUrl, response) {
     const data = loadData();
     const links = ensureLinks(data, cfg.guildId);
     const existingDiscord = links[robloxId];
-    if (existingDiscord && existingDiscord.discordId !== member.id) {
-        throw new Error("That Roblox account is already linked to another Discord account in this server.");
-    }
+    if (existingDiscord && existingDiscord.discordId !== member.id) throw new Error("That Roblox account is already linked to another Discord account in this server.");
 
-    const oldLinks = { ...links };
+    const oldLinks = JSON.parse(JSON.stringify(links));
     for (const linkedRobloxId of Object.keys(links)) {
         if (links[linkedRobloxId]?.discordId === member.id && linkedRobloxId !== robloxId) delete links[linkedRobloxId];
     }
-
-    links[robloxId] = {
-        discordId: member.id,
-        username,
-        displayName: String(user.name || username),
-        profile: typeof user.profile === "string" ? user.profile : null,
-        verifiedAt: new Date().toISOString()
-    };
+    links[robloxId] = { discordId: member.id, username, displayName: String(user.name || username), profile: typeof user.profile === "string" ? user.profile : null, verifiedAt: new Date().toISOString() };
 
     const addedRole = !member.roles.cache.has(role.id);
     if (addedRole) await member.roles.add(role, "Roblox OAuth verification");
@@ -249,8 +212,7 @@ async function handleCallback(client, requestUrl, response) {
         throw error;
     }
 
-    const discordTag = member.user.tag || member.user.username;
-    sendHtml(response, 200, successPage(username, discordTag));
+    sendHtml(response, 200, successPage(username, member.user.tag || member.user.username));
 }
 
 function startWebServer(client) {
@@ -258,32 +220,28 @@ function startWebServer(client) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid TCP port.");
 
     const server = http.createServer(async (request, response) => {
-        const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
-
-        if (request.method !== "GET") {
-            response.writeHead(405, { "Content-Type": "text/plain; charset=utf-8", "Allow": "GET", "Cache-Control": "no-store" });
-            response.end("Method not allowed");
-            return;
-        }
-
-        if (url.pathname === "/roblox/callback") {
-            try {
-                await handleCallback(client, url.toString(), response);
-            } catch (error) {
-                console.error("Roblox verification callback error:", error);
-                if (!response.headersSent) sendHtml(response, 400, errorPage(error.message || "Verification failed. Please return to Discord and try again."));
+        try {
+            const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
+            if (request.method !== "GET") {
+                response.writeHead(405, { "Content-Type": "text/plain; charset=utf-8", "Allow": "GET", "Cache-Control": "no-store" });
+                response.end("Method not allowed");
+                return;
             }
-            return;
+            if (url.pathname === "/roblox/callback") {
+                await handleCallback(client, url.toString(), response);
+                return;
+            }
+            if (url.pathname === "/health") {
+                response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+                response.end("ok");
+                return;
+            }
+            response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+            response.end("Not found");
+        } catch (error) {
+            console.error("Roblox verification HTTP error:", error);
+            if (!response.headersSent) sendHtml(response, 400, errorPage(error.message || "Verification failed. Please return to Discord and try again."));
         }
-
-        if (url.pathname === "/health") {
-            response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
-            response.end("ok");
-            return;
-        }
-
-        response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
-        response.end("Not found");
     });
 
     server.listen(port, "0.0.0.0", () => console.log(`Roblox verification web server listening on port ${port}`));
@@ -292,35 +250,20 @@ function startWebServer(client) {
 }
 
 function verificationEmbed() {
-    return new EmbedBuilder()
-        .setTitle("Roblox Verification")
-        .setDescription("Link your Roblox account to your Discord account using Roblox's official OAuth authorization flow.\n\nYou will be redirected to Roblox to sign in and approve the connection. **Never enter your Roblox password, cookie, or 2FA code into Discord or our bot.**")
-        .setColor(0x5865f2)
-        .setFooter({ text: "Super League • Roblox Verification" });
+    return new EmbedBuilder().setTitle("Roblox Verification").setDescription("Link your Roblox account to your Discord account using Roblox's official OAuth authorization flow.\n\nYou will be redirected to Roblox to sign in and approve the connection. **Never enter your Roblox password, cookie, or 2FA code into Discord or our bot.**").setColor(0x5865f2).setFooter({ text: "Super League • Roblox Verification" });
 }
 
 function oauthLinkButton(discordId) {
-    return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setLabel("Continue to Roblox")
-            .setStyle(ButtonStyle.Link)
-            .setURL(authorizationUrl(discordId))
-    );
+    return new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel("Continue to Roblox").setStyle(ButtonStyle.Link).setURL(authorizationUrl(discordId)));
 }
 
 function permanentVerifyButton() {
-    return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId("roblox_verify")
-            .setLabel("Verify with Roblox")
-            .setStyle(ButtonStyle.Primary)
-    );
+    return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("roblox_verify").setLabel("Verify with Roblox").setStyle(ButtonStyle.Primary));
 }
 
 async function sendOrEditPanel(interaction) {
     const data = loadData();
     const panel = data.settings?.robloxVerificationPanel;
-
     if (panel?.channelId && panel?.messageId) {
         try {
             const channel = await interaction.client.channels.fetch(panel.channelId);
@@ -331,7 +274,6 @@ async function sendOrEditPanel(interaction) {
             console.warn("Existing Roblox verification panel could not be edited; creating a new one:", error.message);
         }
     }
-
     const message = await interaction.channel.send({ embeds: [verificationEmbed()], components: [permanentVerifyButton()] });
     data.settings.robloxVerificationPanel = { channelId: message.channel.id, messageId: message.id };
     saveData(data);
@@ -339,39 +281,23 @@ async function sendOrEditPanel(interaction) {
 }
 
 const command = {
-    data: new SlashCommandBuilder()
-        .setName("verify")
-        .setDescription("Start Roblox account verification or manage the verification panel.")
-        .addSubcommand(subcommand => subcommand
-            .setName("panel")
-            .setDescription("Post or update the permanent Roblox verification panel.")),
-
+    data: new SlashCommandBuilder().setName("verify").setDescription("Start Roblox account verification or manage the verification panel.").addSubcommand(subcommand => subcommand.setName("panel").setDescription("Post or update the permanent Roblox verification panel.")),
     async execute(interaction) {
         if (!interaction.guild) return interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
         const cfg = config();
         if (interaction.guild.id !== cfg.guildId) return interaction.reply({ content: "Roblox verification is not enabled for this server.", ephemeral: true });
-
         const subcommand = interaction.options.getSubcommand(false);
         if (subcommand === "panel") {
-            if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-                return interaction.reply({ content: "You need Manage Server to manage the verification panel.", ephemeral: true });
-            }
-            if (!interaction.channel?.isTextBased?.() || !interaction.channel.send) {
-                return interaction.reply({ content: "Run this command in a text channel where the bot can send messages.", ephemeral: true });
-            }
+            if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return interaction.reply({ content: "You need Manage Server to manage the verification panel.", ephemeral: true });
+            if (!interaction.channel?.isTextBased?.() || !interaction.channel.send) return interaction.reply({ content: "Run this command in a text channel where the bot can send messages.", ephemeral: true });
             return sendOrEditPanel(interaction);
         }
-
         return interaction.reply({ embeds: [verificationEmbed()], components: [oauthLinkButton(interaction.user.id)], ephemeral: true });
     },
-
     async handleButton(interaction) {
-        if (!interaction.guild || interaction.guild.id !== config().guildId) {
-            return interaction.reply({ content: "Roblox verification is not enabled here.", ephemeral: true });
-        }
+        if (!interaction.guild || interaction.guild.id !== config().guildId) return interaction.reply({ content: "Roblox verification is not enabled here.", ephemeral: true });
         return interaction.reply({ embeds: [verificationEmbed()], components: [oauthLinkButton(interaction.user.id)], ephemeral: true });
     },
-
     startWebServer
 };
 
