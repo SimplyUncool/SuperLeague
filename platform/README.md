@@ -1,50 +1,45 @@
-# Super League domain infrastructure
+# Super League domain platform
 
-This directory is the wiring-ready platform layer for the Super League domain.
+The platform service fronts `api`, `status`, `docs`, `apply`, `admin`, `logs`, `cdn`, and `go` through one Node/Express process.
 
-## Subdomains
+## What is wired
 
-- `api.superleague.site` — versioned public API scaffold.
-- `status.superleague.site` — service status page.
-- `docs.superleague.site` — documentation portal.
-- `apply.superleague.site` — application portal UI.
-- `admin.superleague.site` — restricted admin UI; disabled by default.
-- `logs.superleague.site` — restricted audit UI; disabled by default.
-- `cdn.superleague.site` — static asset origin; use `public/assets/`.
-- `go.superleague.site` — reserved for short links/redirects.
+- **API:** reads the bot `users.json` through `SL_DB_PATH`; team names and live rosters come from Discord when `DISCORD_BOT_TOKEN` + `SL_DISCORD_GUILD_ID` are configured.
+- **Roblox/Discord lookup:** uses the bot database and Discord REST data.
+- **Applications:** public form with rate limiting, honeypot protection, bounded fields, local durable storage, audit entry, and optional Discord webhook delivery.
+- **Status:** live HTTP probes plus optional Discord bot authentication check.
+- **Admin:** disabled until `SL_PRIVATE_UI_ENABLED=true` and credentials are configured; protected by HTTP Basic Authentication.
+- **Logs:** authenticated audit viewer and signed-secret event ingestion endpoint.
+- **CDN:** static asset origin under `public/assets/`.
+- **Go:** HTTPS-only redirect targets from `SL_REDIRECTS_JSON`.
+- **Matches/standings:** configured JSON sources via `SL_MATCHES_FILE` and `SL_STANDINGS_FILE`; the bot currently has no native match-results database to read.
 
-## Current state
+## Oracle wiring
 
-The UI and route contracts are intentionally prepared without pretending that the bot database, authentication, monitoring probes, or application submission backend are already connected.
+The intended deployment remains `/home/opc/sl-platform/platform` with PM2 on port `3100` and Nginx terminating TLS. Keep the Node port private to the VM.
 
-Private admin/log interfaces return `503` unless `SL_PRIVATE_UI_ENABLED=true`. **Do not enable that variable on a public listener until authentication is implemented.**
-
-## Environment
+Copy `.env.example` to the platform environment and set at minimum:
 
 ```text
-PORT=3100
-SL_WEBSITE_URL=https://superleague.site
-SL_VERIFY_HEALTH_URL=https://verify.superleague.site/health
-SL_MC_HEALTH_URL=
-SL_API_HEALTH_URL=
-SL_DISCORD_HEALTH_URL=
-SL_PRIVATE_UI_ENABLED=false
+SL_DB_PATH=/home/opc/sl-bot/bot/users.json
+SL_DISCORD_GUILD_ID=<server id>
+DISCORD_BOT_TOKEN=<bot token>
+SL_APPLICATION_WEBHOOK_URL=<optional discord webhook>
+SL_AUDIT_INGEST_SECRET=<random 32+ byte secret>
 ```
 
-## Data adapter
+Only enable the private UI after setting `SL_ADMIN_USERNAME` and `SL_ADMIN_PASSWORD`. Use a long random password and do not commit the environment file.
 
-The API currently reads optional JSON files from `data/` for `teams`, `players`, `matches`, and `standings`. Replace that adapter with the existing Super League database after deployment. Do not expose `users.json` itself.
+## Audit ingestion
 
-## Recommended wiring
+`POST /api/v1/audit` requires `X-SL-Audit-Secret` and writes JSONL with restrictive file permissions. The bot security layer can send anti-nuke, anti-raid, moderation, and administrative events here without exposing the audit log publicly.
 
-Reverse proxy each subdomain to this service on localhost. Keep TLS at the reverse proxy. Put Cloudflare Access/authentication in front of `admin` and `logs`. Run the platform under PM2/systemd with a dedicated unprivileged account. Restrict the platform port to localhost/firewall rules.
+## Health checks
 
-## Future integrations
+- `GET /health`
+- `GET /api/v1/health`
+- `GET /status.json`
 
-1. Connect `api/v1/*` to the bot database through a read-only adapter.
-2. Add authenticated Discord/Roblox identity to `apply`.
-3. Add Cloudflare Access or equivalent to `admin` and `logs`.
-4. Add real HTTP/TCP health probes to `status`.
-5. Add signed webhook/event ingestion for bot security events.
-6. Add immutable/versioned asset paths under `cdn`.
-7. Add a controlled redirect map for `go` links.
+## Important
+
+The public API intentionally does **not** expose the raw database. It returns normalized team/player/identity records only. Discord data is cached briefly to avoid hammering the Discord API.
