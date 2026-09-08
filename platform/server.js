@@ -10,6 +10,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3100);
 const ROOT = path.join(__dirname, "public");
 const DATA = path.join(__dirname, "data");
+const BANNER = path.resolve(__dirname, "..", "..", "docs", "SLBANNER.png");
 const startedAt = Date.now();
 const dbPath = process.env.SL_DB_PATH || path.resolve(__dirname, "../bot/users.json");
 const auditPath = process.env.SL_AUDIT_LOG_PATH || path.join(DATA, "audit.jsonl");
@@ -107,6 +108,17 @@ async function buildTeams() {
   });
 }
 
+function sendPage(name, res) {
+  const file = path.join(ROOT, name);
+  let html;
+  try { html = fs.readFileSync(file, "utf8"); } catch { return res.status(404).send("Page not found."); }
+  if (!html.includes('href="/theme.css"')) html = html.replace("</head>", '<link rel="stylesheet" href="/theme.css"></head>');
+  return res.type("html").send(html);
+}
+
+app.get("/SLBANNER.png", (_req, res) => res.sendFile(BANNER));
+app.get("/theme.css", (_req, res) => res.sendFile(path.join(ROOT, "theme.css")));
+
 app.get("/health", (_req, res) => res.json({ ok: true, service: "superleague-platform", uptime: Math.floor((Date.now() - startedAt) / 1000) }));
 app.get("/api/v1", (_req, res) => res.json({ name: "Super League API", version: "v1", status: "live", endpoints: ["/api/v1/teams", "/api/v1/players", "/api/v1/matches", "/api/v1/standings", "/api/v1/roblox/:id", "/api/v1/discord/:id", "/api/v1/health"] }));
 app.get("/api/v1/health", (_req, res) => res.json({ ok: true, version: "v1", dataSource: fs.existsSync(dbPath) ? "bot-database" : "configured-files" }));
@@ -148,9 +160,19 @@ app.get("/status.json", async (_req, res) => res.json(await statusSnapshot()));
 const redirects = (() => { try { return JSON.parse(process.env.SL_REDIRECTS_JSON || "{}"); } catch { return {}; } })();
 app.get("/go/:key", (req, res) => { const target = redirects[req.params.key]; if (typeof target !== "string" || !/^https:\/\//i.test(target)) return res.status(404).sendFile(path.join(ROOT, "404.html")); res.redirect(302, target); });
 
-function privatePage(name, res) { if (process.env.SL_PRIVATE_UI_ENABLED !== "true") return res.status(503).send("Private Super League UI is disabled."); if (!process.env.SL_ADMIN_USERNAME || !process.env.SL_ADMIN_PASSWORD) return res.status(503).send("Admin authentication is not configured."); res.sendFile(path.join(ROOT, `${name}.html`)); }
-app.get("/admin", auth, (_req, res) => res.sendFile(path.join(ROOT, "admin.html")));
-app.get("/logs", auth, (_req, res) => res.sendFile(path.join(ROOT, "logs.html")));
+app.get("/admin", auth, (_req, res) => sendPage("admin.html", res));
+app.get("/logs", auth, (_req, res) => sendPage("logs.html", res));
+
+app.get("/", (req, res, next) => {
+  const host = String(req.hostname || "").toLowerCase();
+  const subdomain = host.split(".")[0];
+  const pages = { api: "api.html", status: "status.html", docs: "docs.html", apply: "apply.html", cdn: "landing.html", go: "landing.html" };
+  if (subdomain === "admin") return auth(req, res, () => sendPage("admin.html", res));
+  if (subdomain === "logs") return auth(req, res, () => sendPage("logs.html", res));
+  if (pages[subdomain]) return sendPage(pages[subdomain], res);
+  return next();
+});
+
 app.use(express.static(ROOT, { extensions: ["html"] }));
 app.use((req, res) => res.status(404).sendFile(path.join(ROOT, "404.html")));
 app.use((error, _req, res, _next) => { console.error(error); res.status(500).json({ error: "internal_error" }); });

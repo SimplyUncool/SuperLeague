@@ -1,0 +1,8 @@
+/* Shared Super League platform theme. The banner is the background itself; there is no gradient or overlay. */
+:root{--sl-bg:#080808;--sl-line:rgba(255,255,255,.16)}
+body{background:var(--sl-bg) url('/SLBANNER.png') center top/cover fixed no-repeat!important;color:#fff!important;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important}
+main{position:relative;z-index:1}
+a{color:#fff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.card,.box,.log{backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+@media(max-width:650px){body{background-position:center top;background-attachment:scroll}}
