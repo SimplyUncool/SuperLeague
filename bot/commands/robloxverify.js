@@ -300,4 +300,4 @@ const command = {
     startWebServer
 };
 
-module.exports = { command, startWebServer, handleButton };
+module.exports = { command, handleButton: command.handleButton, startWebServer };
