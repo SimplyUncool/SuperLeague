@@ -9,6 +9,7 @@ const embeds_js_1 = require("./embeds.js");
 const permissions_js_1 = require("./permissions.js");
 const teamstaff_js_1 = require("./teamstaff.js");
 const teamembeds_js_1 = require("./teamembeds.js");
+const demandLocks = new Set();
 function canUseDemand(authority) {
     return authority === null;
 }
@@ -27,140 +28,153 @@ exports.command = {
             });
             return;
         }
-        const data = (0, database_js_1.loadData)();
-        const leadership = (0, teamstaff_js_1.findTeamAccess)(data, interaction.user.id);
-        if (!canUseDemand(leadership?.authority ?? null)) {
+        const lockKey = `${interaction.guild.id}:${interaction.user.id}`;
+        if (demandLocks.has(lockKey)) {
             await interaction.reply({
-                embeds: [
-                    (0, embeds_js_1.createErrorEmbed)("Managers, assistant managers, and player managers cannot use /demand. Ask your manager to demote you to a regular member first.", interaction.guild)
-                ],
+                embeds: [(0, embeds_js_1.createErrorEmbed)("Your /demand request is already being processed. Please wait for it to finish.", interaction.guild)],
                 ephemeral: true
             });
             return;
         }
-        const member = await interaction.guild.members
-            .fetch(interaction.user.id)
-            .catch(() => null);
-        if (!member) {
-            await interaction.reply({
-                embeds: [(0, embeds_js_1.createErrorEmbed)("Your server member could not be found.", interaction.guild)],
-                ephemeral: true
-            });
-            return;
-        }
-        const teamIds = Object.keys(data.teams).filter(roleId => member.roles.cache.has(roleId));
-        if (!teamIds.length) {
-            await interaction.reply({
-                embeds: [(0, embeds_js_1.createErrorEmbed)("You are not currently on a registered team.", interaction.guild)],
-                ephemeral: true
-            });
-            return;
-        }
-        if (teamIds.length > 1) {
-            await interaction.reply({
-                embeds: [
-                    (0, embeds_js_1.createErrorEmbed)("You have more than one team role. Ask a league administrator to correct your roles.", interaction.guild)
-                ],
-                ephemeral: true
-            });
-            return;
-        }
-        const teamRole = interaction.guild.roles.cache.get(teamIds[0]);
-        const team = data.teams[teamIds[0]];
-        if (!teamRole || !team) {
-            await interaction.reply({
-                embeds: [(0, embeds_js_1.createErrorEmbed)("Your team role could not be found.", interaction.guild)],
-                ephemeral: true
-            });
-            return;
-        }
-        const demandLimit = (0, database_js_1.getDemandLimit)(data, interaction.guild.id);
-        const used = getDemandUsage(data, interaction.guild.id, interaction.user.id);
-        if (used >= demandLimit) {
-            await interaction.reply({
-                embeds: [
-                    (0, embeds_js_1.createErrorEmbed)(`You have used all ${demandLimit} of your available team demands.`, interaction.guild)
-                ],
-                ephemeral: true
-            });
-            return;
-        }
-        const botMember = interaction.guild.members.me;
-        if (!botMember?.permissions.has(discord_js_1.PermissionFlagsBits.ManageRoles) ||
-            !member.manageable ||
-            !teamRole.editable) {
-            await interaction.reply({
-                embeds: [
-                    (0, embeds_js_1.createErrorEmbed)("I cannot remove the required roles. Check my Manage Roles permission and role position.", interaction.guild)
-                ],
-                ephemeral: true
-            });
-            return;
-        }
-        data.settings.demandUsage[interaction.guild.id] ??= {};
-        data.settings.demandUsage[interaction.guild.id][interaction.user.id] = used + 1;
+        demandLocks.add(lockKey);
         try {
-            (0, database_js_1.saveData)(data);
-        }
-        catch (error) {
-            console.error(error);
-            await interaction.reply({
-                embeds: [
-                    (0, embeds_js_1.createErrorEmbed)("I could not save the departure. No roles were changed.", interaction.guild)
-                ],
-                ephemeral: true
-            });
-            return;
-        }
-        try {
-            await member.roles.remove(teamRole, "Player left the team using /demand");
-        }
-        catch (error) {
-            console.error(error);
-            if (used) {
-                data.settings.demandUsage[interaction.guild.id][interaction.user.id] = used;
+            const data = (0, database_js_1.loadData)();
+            const leadership = (0, teamstaff_js_1.findTeamAccess)(data, interaction.user.id);
+            if (!canUseDemand(leadership?.authority ?? null)) {
+                await interaction.reply({
+                    embeds: [
+                        (0, embeds_js_1.createErrorEmbed)("Managers, assistant managers, and player managers cannot use /demand. Ask your manager to demote you to a regular member first.", interaction.guild)
+                    ],
+                    ephemeral: true
+                });
+                return;
             }
-            else {
-                delete data.settings.demandUsage[interaction.guild.id][interaction.user.id];
+            const member = await interaction.guild.members
+                .fetch(interaction.user.id)
+                .catch(() => null);
+            if (!member) {
+                await interaction.reply({
+                    embeds: [(0, embeds_js_1.createErrorEmbed)("Your server member could not be found.", interaction.guild)],
+                    ephemeral: true
+                });
+                return;
             }
-            const restored = (() => {
-                try {
-                    (0, database_js_1.saveData)(data);
-                    return true;
+            const teamIds = Object.keys(data.teams).filter(roleId => member.roles.cache.has(roleId));
+            if (!teamIds.length) {
+                await interaction.reply({
+                    embeds: [(0, embeds_js_1.createErrorEmbed)("You are not currently on a registered team.", interaction.guild)],
+                    ephemeral: true
+                });
+                return;
+            }
+            if (teamIds.length > 1) {
+                await interaction.reply({
+                    embeds: [
+                        (0, embeds_js_1.createErrorEmbed)("You have more than one team role. Ask a league administrator to correct your roles.", interaction.guild)
+                    ],
+                    ephemeral: true
+                });
+                return;
+            }
+            const teamRole = interaction.guild.roles.cache.get(teamIds[0]);
+            const team = data.teams[teamIds[0]];
+            if (!teamRole || !team) {
+                await interaction.reply({
+                    embeds: [(0, embeds_js_1.createErrorEmbed)("Your team role could not be found.", interaction.guild)],
+                    ephemeral: true
+                });
+                return;
+            }
+            const demandLimit = (0, database_js_1.getDemandLimit)(data, interaction.guild.id);
+            const used = getDemandUsage(data, interaction.guild.id, interaction.user.id);
+            if (used >= demandLimit) {
+                await interaction.reply({
+                    embeds: [
+                        (0, embeds_js_1.createErrorEmbed)(`You have used all ${demandLimit} of your available team demands.`, interaction.guild)
+                    ],
+                    ephemeral: true
+                });
+                return;
+            }
+            const botMember = interaction.guild.members.me;
+            if (!botMember?.permissions.has(discord_js_1.PermissionFlagsBits.ManageRoles) ||
+                !member.manageable ||
+                !teamRole.editable) {
+                await interaction.reply({
+                    embeds: [
+                        (0, embeds_js_1.createErrorEmbed)("I cannot remove the required roles. Check my Manage Roles permission and role position.", interaction.guild)
+                    ],
+                    ephemeral: true
+                });
+                return;
+            }
+            data.settings.demandUsage[interaction.guild.id] ??= {};
+            data.settings.demandUsage[interaction.guild.id][interaction.user.id] = used + 1;
+            try {
+                (0, database_js_1.saveData)(data);
+            }
+            catch (error) {
+                console.error(error);
+                await interaction.reply({
+                    embeds: [
+                        (0, embeds_js_1.createErrorEmbed)("I could not save the departure. No roles were changed.", interaction.guild)
+                    ],
+                    ephemeral: true
+                });
+                return;
+            }
+            try {
+                await member.roles.remove(teamRole, "Player left the team using /demand");
+            }
+            catch (error) {
+                console.error(error);
+                if (used) {
+                    data.settings.demandUsage[interaction.guild.id][interaction.user.id] = used;
                 }
-                catch (restoreError) {
-                    console.error(restoreError);
-                    return false;
+                else {
+                    delete data.settings.demandUsage[interaction.guild.id][interaction.user.id];
                 }
-            })();
-            await interaction.reply({
-                embeds: [
-                    (0, embeds_js_1.createErrorEmbed)(restored
-                        ? `I could not remove the required roles from ${member}. No demand was used.`
-                        : "I could not remove the required roles, and the saved demand record needs an administrator to correct it.", interaction.guild)
-                ],
-                ephemeral: true
+                const restored = (() => {
+                    try {
+                        (0, database_js_1.saveData)(data);
+                        return true;
+                    }
+                    catch (restoreError) {
+                        console.error(restoreError);
+                        return false;
+                    }
+                })();
+                await interaction.reply({
+                    embeds: [
+                        (0, embeds_js_1.createErrorEmbed)(restored
+                            ? `I could not remove the required roles from ${member}. No demand was used.`
+                            : "I could not remove the required roles, and the saved demand record needs an administrator to correct it.", interaction.guild)
+                    ],
+                    ephemeral: true
+                });
+                return;
+            }
+            const embed = (0, teamembeds_js_1.createTeamTransactionEmbed)({
+                guild: interaction.guild,
+                teamRole,
+                team,
+                data,
+                title: `Player Departure - ${teamRole.name}`,
+                description: `> ${member} has left ${(0, teamembeds_js_1.getTeamEmoji)(teamRole)} ${teamRole}.`,
+                color: 0xed4245,
+                extraFields: [
+                    {
+                        name: "📄 Demands Used",
+                        value: `\`${used + 1}/${demandLimit}\``,
+                        inline: true
+                    }
+                ]
             });
-            return;
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+            await (0, teamembeds_js_1.sendTransactionRecord)(interaction.guild, data, embed);
+        } finally {
+            demandLocks.delete(lockKey);
         }
-        const embed = (0, teamembeds_js_1.createTeamTransactionEmbed)({
-            guild: interaction.guild,
-            teamRole,
-            team,
-            data,
-            title: `Player Departure - ${teamRole.name}`,
-            description: `> ${member} has left ${(0, teamembeds_js_1.getTeamEmoji)(teamRole)} ${teamRole}.`,
-            color: 0xed4245,
-            extraFields: [
-                {
-                    name: "📄 Demands Used",
-                    value: `\`${used + 1}/${demandLimit}\``,
-                    inline: true
-                }
-            ]
-        });
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-        await (0, teamembeds_js_1.sendTransactionRecord)(interaction.guild, data, embed);
     }
 };
 exports.demandLimitCommand = {

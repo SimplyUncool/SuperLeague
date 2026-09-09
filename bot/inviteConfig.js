@@ -98,6 +98,10 @@ async function handleInteraction(interaction) {
 
     if (interaction.isStringSelectMenu() && interaction.customId === "cfg_channel_setting") {
         const setting = interaction.values[0];
+        if (setting === "invite" && interaction.guild.ownerId !== interaction.user.id) {
+            await interaction.reply({ embeds: [createErrorEmbed("Only the server owner can configure invite logs.", interaction.guild)], ephemeral: true });
+            return true;
+        }
         if (setting === "invite") {
             await interaction.update(buildChannelSetting("invite"));
             return true;
@@ -107,6 +111,10 @@ async function handleInteraction(interaction) {
     }
 
     if (interaction.isChannelSelectMenu?.() && interaction.customId === "cfg_channel_set:invite") {
+        if (interaction.guild.ownerId !== interaction.user.id) {
+            await interaction.reply({ embeds: [createErrorEmbed("Only the server owner can configure invite logs.", interaction.guild)], ephemeral: true });
+            return true;
+        }
         const channelId = interaction.values[0];
         const config = loadConfig();
         const guild = ensureGuild(config, interaction.guild.id);

@@ -19,6 +19,7 @@ const dbPath = path.resolve(
     process.env.SUPER_LEAGUE_DB_PATH || path.resolve(__dirname, "..", "users.json")
 );
 const configPath = path.join(path.dirname(dbPath), "tickets.json");
+const creationLocks = new Set();
 
 function loadConfig() {
     try {
@@ -238,13 +239,20 @@ async function handleButton(interaction) {
             return interaction.reply({ content: "The configured ticket category no longer exists. Please contact a server administrator.", ephemeral: true });
         }
 
+        const lockKey = `${interaction.guild.id}:${interaction.user.id}`;
+        if (creationLocks.has(lockKey)) {
+            return interaction.reply({ content: "Your ticket is already being created. Please wait for the current request to finish.", ephemeral: true });
+        }
+
         const existing = findExistingTicket(interaction.guild, interaction.user.id, category.id);
         if (existing) {
             return interaction.reply({ content: `You already have an open ticket: ${existing}`, ephemeral: true });
         }
 
+        creationLocks.add(lockKey);
         const me = interaction.guild.members.me;
         if (!me?.permissions.has(PermissionFlagsBits.ManageChannels)) {
+            creationLocks.delete(lockKey);
             return interaction.reply({ content: "I need the Manage Channels permission to create tickets.", ephemeral: true });
         }
 
@@ -311,6 +319,8 @@ async function handleButton(interaction) {
         } catch (error) {
             console.error("Failed to create ticket:", error);
             await interaction.editReply({ content: "I couldn't create the ticket. Check my Manage Channels permission and the category permissions." });
+        } finally {
+            creationLocks.delete(lockKey);
         }
 
         return;
