@@ -41,6 +41,7 @@ function isGuildChannel(channel) { return Boolean(channel?.guild && !channel.isT
 function trustedIds() { return (process.env.ANTI_NUKE_TRUSTED_IDS || "").split(",").map(v => v.trim()).filter(Boolean); }
 function isTrusted(guild, userId, client) { return Boolean(userId) && (userId === client.user.id || userId === guild.ownerId || trustedIds().includes(userId)); }
 function dangerousRole(role) { return Boolean(role && !role.managed && role.permissions.has(DANGEROUS_PERMISSIONS)); }
+function getChange(entry, key) { return entry.changes?.find(change => change.key === key) || null; }
 
 function snapshotChannel(channel) {
     if (!isGuildChannel(channel) || !channel.permissionOverwrites) return;
@@ -149,8 +150,6 @@ function markAuditSeen(entry) {
     return true;
 }
 
-function getChange(entry, key) { return entry.changes?.find(change => change.key === key) || null; }
-
 function parseSnowflakes(value) {
     if (Array.isArray(value)) return value.flatMap(parseSnowflakes);
     if (value && typeof value === "object") return [value.id, value.role_id, value.target_id].filter(Boolean).flatMap(parseSnowflakes);
@@ -184,7 +183,6 @@ async function resolveBotAuthorizer(guild, botId) {
 
 async function kickBotImmediately(member, client) {
     if (!member?.user?.bot || member.id === client.user.id) return false;
-    const authorizerId = await resolveBotAuthorizer(member.guild, member.id);
     let removed = false;
     try {
         if (member.kickable) {
@@ -194,13 +192,16 @@ async function kickBotImmediately(member, client) {
     } catch (error) {
         console.error(`Failed to kick added bot ${member.id}:`, error);
     }
-    const botName = member.user.tag || member.user.username || member.id;
-    const instruction = `Please ask the server owner to add **${botName}** instead of acting yourself.`;
-    if (authorizerId && authorizerId !== client.user.id) {
-        const authorizer = await client.users.fetch(authorizerId).catch(() => null);
-        if (authorizer) await authorizer.send(instruction).catch(error => console.error("Bot-add DM failed:", error));
-    }
-    await logSecurity(member.guild, `${removed ? "Rejected" : "Could not remove"} bot **${botName}** (${member.id}) added by ${authorizerId ? `<@${authorizerId}>` : "unknown user"}.`, true);
+    void (async () => {
+        const authorizerId = await resolveBotAuthorizer(member.guild, member.id);
+        const botName = member.user.tag || member.user.username || member.id;
+        const instruction = `Please ask the server owner to add **${botName}** instead of acting yourself.`;
+        if (authorizerId && authorizerId !== client.user.id) {
+            const authorizer = await client.users.fetch(authorizerId).catch(() => null);
+            if (authorizer) await authorizer.send(instruction).catch(error => console.error("Bot-add DM failed:", error));
+        }
+        await logSecurity(member.guild, `${removed ? "Rejected" : "Could not remove"} bot **${botName}** (${member.id}) added by ${authorizerId ? `<@${authorizerId}>` : "unknown user"}.`, true);
+    })().catch(error => console.error("Bot-add follow-up failed:", error));
     return removed;
 }
 
@@ -457,7 +458,10 @@ async function punishExecutor(guild, executorId, client, reason) {
 async function handleAuditEntry(entry, guild, client) {
     if (!entry?.action || !guild || !entry.executorId || !markAuditSeen(entry)) return;
     const action = entry.action;
-    if (entry.executorId === client.user.id) return;
+    if (entry.executorId === client.user.id) {
+        if (action === AuditLogEvent.MemberRoleUpdate) await handleRoleAssignment(guild, entry, client);
+        return;
+    }
     if (action === AuditLogEvent.BotAdd) {
         const botMember = guild.members.cache.get(entry.targetId) || await guild.members.fetch(entry.targetId).catch(() => null);
         if (botMember?.user?.bot) await kickBotImmediately(botMember, client);
@@ -519,7 +523,7 @@ async function restorePersistedLockdowns(client) {
     }
 }
 
-async function initializeSecurity(client) {
+function initializeSecurity(client) {
     client.on("clientReady", async readyClient => {
         for (const guild of readyClient.guilds.cache.values()) snapshotGuild(guild);
         await restorePersistedLockdowns(readyClient);
