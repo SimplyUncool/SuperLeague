@@ -1,8 +1,9 @@
 {
   "scripts": {
-    "start": "node main.js"
+    "start": "node bootstrap.js"
   },
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "discord.js": "^14.27.0",
     "dotenv": "^17.4.2"
   }

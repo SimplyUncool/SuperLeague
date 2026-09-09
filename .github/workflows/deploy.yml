@@ -22,22 +22,21 @@ jobs:
             cd "$BOT_DIR"
 
             DB_DIR="/home/opc/sl-bot-data"
-            DB_FILE="$DB_DIR/users.json"
+            DB_FILE="$DB_DIR/superleague.db"
             BACKUP_DIR="$DB_DIR/backups"
+            LEGACY_DB="$DB_DIR/users.json"
             mkdir -p "$BACKUP_DIR"
 
-            # The live database may still exist in the old Git checkout on the
-            # first deployment after this migration. Copy it before resetting.
-            if [ ! -f "$DB_FILE" ] && [ -f "$BOT_DIR/bot/users.json" ]; then
-              cp "$BOT_DIR/bot/users.json" "$DB_FILE"
+            if [ ! -f "$LEGACY_DB" ] && [ -f "$BOT_DIR/bot/users.json" ]; then
+              cp "$BOT_DIR/bot/users.json" "$LEGACY_DB"
             fi
 
-            if [ -f "$DB_FILE" ]; then
-              cp "$DB_FILE" "$BACKUP_DIR/users-$(date +%Y%m%d-%H%M%S).json"
-            fi
+            for legacy in users.json users.json.bak levels.json invites.json tickets.json security.json; do
+              if [ -f "$DB_DIR/$legacy" ]; then
+                cp "$DB_DIR/$legacy" "$BACKUP_DIR/$legacy-$(date +%Y%m%d-%H%M%S)"
+              fi
+            done
 
-            # The database is external to Git. Reset the code checkout to the
-            # exact remote main state so forced branch updates cannot block deployment.
             git fetch origin main
             git reset --hard origin/main
 
@@ -46,8 +45,12 @@ jobs:
             find . -type f -name '*.js' ! -name 'applications_legacy.js' -exec node --check {} \;
 
             cd "$BOT_DIR"
-            test -f "$DB_FILE"
+            if [ -f "$DB_FILE" ]; then
+              DB_FILE="$DB_FILE" node -e 'const Database=require("better-sqlite3"); const db=new Database(process.env.DB_FILE); db.pragma("wal_checkpoint(TRUNCATE)"); db.close();'
+              cp "$DB_FILE" "$BACKUP_DIR/superleague-$(date +%Y%m%d-%H%M%S).db"
+            fi
+
             SUPER_LEAGUE_DB_PATH="$DB_FILE" pm2 restart discord-bot --update-env
             pm2 describe discord-bot >/dev/null
 
-            ls -1t "$BACKUP_DIR"/users-*.json 2>/dev/null | tail -n +21 | xargs -r rm -f
+            ls -1t "$BACKUP_DIR"/superleague-*.db 2>/dev/null | tail -n +21 | xargs -r rm -f
