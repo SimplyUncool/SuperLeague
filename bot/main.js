@@ -18,7 +18,8 @@ const moderation = require("./commands/moderation.js");
 const threadlock = require("./commands/threadlock.js");
 const teamstaff = require("./commands/teamstaff.js");
 const teamswap = require("./commands/teamswap.js");
-const config = require("./commands/config.js");
+const configPages = require("./commands/config.js");
+const config = require("./configHub.js");
 const robloxverify = require("./commands/robloxverify.js");
 const invites = require("./commands/invites.js");
 const inviteTracker = require("./inviteTracker.js");
@@ -45,7 +46,8 @@ client.on("interactionCreate", async interaction => {
   if (interaction.isAutocomplete()) { const command = commands.get(interaction.commandName); if (!command?.autocomplete) return; try { await command.autocomplete(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error("Autocomplete error:", error); } return; }
   if (interaction.isChatInputCommand()) { const command = commands.get(interaction.commandName); if (!command) return; try { await command.execute(makePublicInteraction(interaction)); } catch (error) { if (!isUnknownInteraction(error)) console.error(error); await safeInteractionError(interaction, "Something went wrong while running that command."); } finally { try { await sendStaffCommandLog(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error(error); } } return; }
   if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu?.() || interaction.isChannelSelectMenu?.() || interaction.isUserSelectMenu?.() || interaction.isModalSubmit()) {
-    if (interaction.customId?.startsWith("cfg_")) { try { if (await inviteConfig.handleInteraction(interaction)) return; await config.handleInteraction(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error("Config interaction error:", error); await safeInteractionError(interaction, "Something went wrong while updating the configuration."); } return; }
+    if (interaction.customId?.startsWith("hub_")) { try { if (await config.handleInteraction(interaction)) return; } catch (error) { if (!isUnknownInteraction(error)) console.error("Unified config interaction error:", error); await safeInteractionError(interaction, "Something went wrong while opening configuration."); } return; }
+    if (interaction.customId?.startsWith("cfg_")) { try { if (await inviteConfig.handleInteraction(interaction)) return; await configPages.handleInteraction(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error("Config interaction error:", error); await safeInteractionError(interaction, "Something went wrong while updating the configuration."); } return; }
     if (interaction.customId?.startsWith("lvlcfg_")) { try { await levels.handleInteraction(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error("Levels configuration error:", error); await safeInteractionError(interaction, "Something went wrong while updating the level configuration."); } return; }
     if (interaction.customId?.startsWith("appcfg_")) { try { await applications.handleInteraction(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error("Application config interaction error:", error); await safeInteractionError(interaction, "Something went wrong while updating applications."); } return; }
     if (interaction.customId?.startsWith("application_")) { try { if (interaction.customId === "application_select") await applications.handleApplicationSelect(interaction); else if (interaction.customId.startsWith("application_accept:") || interaction.customId.startsWith("application_reject:")) await applications.handleApplicationReview(interaction); else await applications.handleApplicantInteraction(interaction); } catch (error) { if (!isUnknownInteraction(error)) console.error(error); await safeInteractionError(interaction, "Something went wrong while handling that application."); } return; }
