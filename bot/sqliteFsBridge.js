@@ -6,9 +6,10 @@ const Database = require("better-sqlite3");
 
 const configuredPath = process.env.SUPER_LEAGUE_DB_PATH;
 const dbPath = path.resolve(configuredPath || path.join(__dirname, "superleague.db"));
-process.env.SUPER_LEAGUE_DB_PATH = dbPath;
-
 const dataDir = path.dirname(dbPath);
+const logicalDbPath = path.join(dataDir, "users.json");
+process.env.SUPER_LEAGUE_DB_PATH = logicalDbPath;
+
 const managedNames = new Set([
     "users.json",
     "users.json.bak",
