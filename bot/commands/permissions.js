@@ -2,20 +2,25 @@
 
 const { PermissionFlagsBits } = require("discord.js");
 
-function isOwner(data, userId) {
-    return Boolean(userId) && data?.settings?.owner_id === userId;
+function isOwner(data, userId, interaction) {
+    return Boolean(userId) && Boolean(
+        interaction?.guild?.ownerId === userId ||
+        data?.settings?.owner_id === userId
+    );
 }
 
-function hasAccess(data, userId, scope) {
-    if (isOwner(data, userId)) return true;
-
+function hasAccess(data, userId, scope, interaction) {
+    if (isOwner(data, userId, interaction)) return true;
     const whitelist = data?.settings?.whitelists?.[scope];
     return Array.isArray(whitelist) && whitelist.includes(userId);
 }
 
 function canRunLeagueAdmin(interaction, data) {
-    return interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) === true ||
-        hasAccess(data, interaction.user.id, "league_admin");
+    return Boolean(
+        interaction?.guild?.ownerId === interaction?.user?.id ||
+        interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) === true ||
+        hasAccess(data, interaction.user.id, "league_admin", interaction)
+    );
 }
 
 module.exports = {
