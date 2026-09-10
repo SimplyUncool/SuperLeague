@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Deploy to Oracle
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
         with:
           host: ${{ secrets.ORACLE_HOST }}
           username: ${{ secrets.ORACLE_USER }}
@@ -41,7 +41,7 @@ jobs:
             git reset --hard origin/main
 
             cd "$BOT_DIR/bot"
-            npm install --omit=dev
+            npm ci --omit=dev
             find . -type f -name '*.js' ! -name 'applications_legacy.js' -exec node --check {} \;
 
             cd "$BOT_DIR"
